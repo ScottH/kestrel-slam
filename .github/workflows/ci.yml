@@ -4,9 +4,15 @@
 name: ci
 
 on:
-  push:
-    branches: [main]
-  pull_request:
+  push:              # every branch, so each commit gets a status even before a PR exists
+    branches: ['**']
+  pull_request:      # PRs from forks
+  workflow_dispatch: # "Run workflow" button in the Actions tab
+
+# A newer push to the same branch cancels the run that is still going.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   build-and-test:

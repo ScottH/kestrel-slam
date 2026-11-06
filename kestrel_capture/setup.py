@@ -17,7 +17,7 @@ setup(
     install_requires=['setuptools'],
     zip_safe=True,
     maintainer='Kestrel SLAM maintainers',
-    maintainer_email='sh@co.bot',
+    maintainer_email='scottrharris@gmail.com',
     description='Rosbag capture with live data-quality monitoring for the Orbbec Gemini 335Lg.',
     license='Apache-2.0',
     tests_require=['pytest'],

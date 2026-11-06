@@ -7,7 +7,7 @@
     Kestrel SLAM core library: ROS-independent stereo-inertial SLAM with loop closure and
     lifelong mapping for changing environments.
   </description>
-  <maintainer email="sh@co.bot">Kestrel SLAM maintainers</maintainer>
+  <maintainer email="scottrharris@gmail.com">Kestrel SLAM maintainers</maintainer>
   <license>Apache-2.0</license>
 
   <buildtool_depend>ament_cmake</buildtool_depend>

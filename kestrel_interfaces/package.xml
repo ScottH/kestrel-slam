@@ -4,7 +4,7 @@
   <name>kestrel_interfaces</name>
   <version>0.1.0</version>
   <description>ROS 2 service definitions for Kestrel SLAM (map save/load/reset).</description>
-  <maintainer email="sh@co.bot">Kestrel SLAM maintainers</maintainer>
+  <maintainer email="scottrharris@gmail.com">Kestrel SLAM maintainers</maintainer>
   <license>Apache-2.0</license>
 
   <buildtool_depend>ament_cmake</buildtool_depend>

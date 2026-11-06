@@ -7,7 +7,7 @@
     Records SLAM-ready rosbags from an Orbbec Gemini 335L/335Lg (stereo IR + IMU + depth) with a
     live data-quality monitor.
   </description>
-  <maintainer email="sh@co.bot">Kestrel SLAM maintainers</maintainer>
+  <maintainer email="scottrharris@gmail.com">Kestrel SLAM maintainers</maintainer>
   <license>Apache-2.0</license>
 
   <exec_depend>rclpy</exec_depend>

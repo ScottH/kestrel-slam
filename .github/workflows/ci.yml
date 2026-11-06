@@ -1,0 +1,39 @@
+# SPDX-License-Identifier: Apache-2.0
+# CI uses exactly the same image and scripts as local development (`docker compose run test`),
+# so "green in CI" means "works on your laptop" and vice versa.
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build dev image (cached)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/Dockerfile
+          target: dev
+          tags: kestrel/dev:jazzy
+          load: true
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # The checkout is only read; all build output goes to Docker volumes, so the container
+      # user's uid does not need to match the runner's.
+      - name: Build and test
+        run: docker compose run --rm --no-build test
+
+      - name: Format check
+        run: |
+          docker compose run --rm --no-build shell bash -c \
+            "cd /ws/src/kestrel_slam && find kestrel_core kestrel_ros \( -name '*.cpp' -o -name '*.hpp' \) \
+             | xargs clang-format --dry-run --Werror"

@@ -82,17 +82,21 @@ The host needs nothing but Docker (plus the NVIDIA Container Toolkit only if you
 on a Jetson or a desktop GPU).
 
 ```
+compose.yaml              services below (at the repo root so `docker compose` works anywhere)
 docker/
 ├── Dockerfile            multi-stage: base (ROS 2 Jazzy + Eigen/OpenCV/Ceres/GTest)
-│                           → dev (build tools, evo, gdb, clang-format)
-│                           → runtime (slim image with the built workspace, for the robot)
-│                           → orbbec (adds the OrbbecSDK_ROS2 driver + udev rules)
-├── compose.yaml          services below
-└── entrypoint.sh         sources ROS, the workspace overlay, and runs the command
+│                           → orbbec (OrbbecSDK_ROS2 driver, pinned commit)
+│                           → dev (driver + build tools, evo, gdb, clang-format, foxglove bridge)
+│                           → builder → runtime (slim image with the built workspace, for the robot)
+├── entrypoint.sh         sources ROS + overlays; grants USB access to Orbbec devices and drops
+│                         to your uid (no host udev rules needed)
+└── scripts/              build.sh, test.sh, capture.sh
 ```
 
 | `docker compose …` | What it does |
 |--------------------|--------------|
+| `run --rm capture session:=… scenario:=…` | **(M0)** records a Gemini 335Lg rosbag with a live data-quality monitor; see `docs/hardware/capture_guide.md` |
+| `up foxglove` | **(M0)** Foxglove bridge on ws://localhost:8765 for browser-based visualization |
 | `run --rm build` | colcon build of the repo (source bind-mounted, build cache in a named volume) |
 | `run --rm test` | colcon test + ctest + GoogleTest results |
 | `run --rm euroc MH_01_easy` | downloads (once, into a `datasets` volume), runs and evaluates a EuRoC sequence, writes plots to `./results` |
@@ -116,7 +120,10 @@ kestrel_slam/
 ├── docker/  .devcontainer/        see §4
 ├── docs/
 │   ├── DEV_PLAN.md                (this file)
+│   ├── REFERENCES.md              curated bibliography with "why read this" notes
+│   ├── theory/                    textbook-style theory chapters (Lie groups … evaluation)
 │   ├── architecture.md
+│   ├── hardware/capture_guide.md  what/how to record with the capture tool
 │   ├── hardware/gemini_335lg.md   driver setup, laser/interleave, Kalibr calibration (in Docker)
 │   ├── benchmarks.md              procedure + results
 │   └── tutorial/                  00_overview … 12_lifelong_mapping (one chapter per module)
@@ -125,6 +132,7 @@ kestrel_slam/
 │   ├── src/  apps/ (run_euroc, run_tumvi, train_vocabulary)  test/
 ├── kestrel_interfaces/            SaveMap.srv, LoadMap.srv, ResetMap.srv
 ├── kestrel_ros/                   node, launch (gemini_335lg, bag replay), config, rviz
+├── kestrel_capture/               rosbag recorder + live data-quality monitor (M0)
 └── tools/                         evaluate.py (evo wrapper), plot scripts
 ```
 
@@ -137,7 +145,10 @@ Each milestone ends in a commit whose tests pass in `docker compose run --rm tes
 
 ### M0 — Scaffolding + Docker
 Dockerfile (base/dev/runtime stages), compose services, devcontainer, CMake/ament packages, config
-loader, logging, CI workflow, `.clang-format`, license.
+loader, logging, CI workflow, `.clang-format`, license, and **`kestrel_capture`**, a rosbag
+recorder for the Gemini 335Lg with a live data-quality monitor (added so real data can be
+collected in parallel with development). Also: `docs/theory/` and `docs/REFERENCES.md`, the
+teaching material the module chapters build on.
 ✅ `docker compose run --rm build` and `… test` succeed on a clean machine with only Docker installed.
 
 ### M1 — Math & sensor models
@@ -217,8 +228,10 @@ calibration (Kalibr also runs in Docker).
   and landmark observations, including moving and disappearing objects. This lets us test the
   back-end, loop closure and lifelong logic deterministically, without datasets.
 * **Dataset regression**: EuRoC (accuracy), TUM-VI (robustness), and OpenLORIS-Scene (lifelong and
-  dynamic scenes, recorded with similar stereo-IR + IMU hardware). Results are tracked in
-  `docs/benchmarks.md`.
+  dynamic scenes, revisited over time; its RealSense sensors include a stereo fisheye + IMU
+  stream (T265), but no stereo-IR pair like the 335L's, so the exact usable streams must be
+  checked when the runner is written). The closest match to the target hardware will be your own
+  335Lg recordings. Results are tracked in `docs/benchmarks.md`.
 * **Hardware**: your own Gemini 335Lg rosbags. Ideally include an A/B pair of the same space with
   furniture moved between the two recordings.
 * All of the above runs through Docker, both locally and in CI.

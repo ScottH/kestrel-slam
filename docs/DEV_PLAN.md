@@ -1,5 +1,8 @@
 # Kestrel SLAM — Development Plan
 
+> **Progress tracking:** the live checklist of features, tests, data recordings and field tests
+> is in [ROADMAP.md](ROADMAP.md). This document explains the design and the reasoning behind it.
+
 > **Status:** draft for review (2026-11-06). Nothing below is implemented yet.
 > Phases are ordered so that every milestone ends with something that builds in Docker,
 > has tests, and can be evaluated on data.

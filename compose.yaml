@@ -1,0 +1,94 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# Kestrel SLAM — everything runs in containers; the host only needs Docker.
+#
+#   docker compose build                    # build the dev image (first time: ~10-15 min)
+#   docker compose run --rm build           # colcon build the workspace
+#   docker compose run --rm test            # build + run all unit tests
+#   docker compose run --rm shell           # interactive shell with everything installed
+#   docker compose run --rm capture         # record a Gemini 335Lg rosbag (camera plugged in)
+#   docker compose up foxglove              # visualize live topics at https://app.foxglove.dev
+#                                           #   (connect to ws://localhost:8765)
+#
+# Your user id is baked into the image so that files created in the bind-mounted source tree and
+# ./data are owned by you. If your uid is not 1000, export it first:
+#   export KESTREL_UID=$(id -u) KESTREL_GID=$(id -g); docker compose build
+#
+# Build artefacts live in named volumes (fast, and they keep the source tree clean). To start
+# from scratch:  docker compose down -v
+
+x-kestrel-common: &common
+  image: kestrel/dev:jazzy
+  build:
+    context: .
+    dockerfile: docker/Dockerfile
+    target: dev
+    args:
+      ROS_DISTRO: jazzy
+      USER_UID: ${KESTREL_UID:-1000}
+      USER_GID: ${KESTREL_GID:-1000}
+  volumes:
+    - .:/ws/src/kestrel_slam
+    - kestrel-build:/ws/build
+    - kestrel-install:/ws/install
+    - kestrel-log:/ws/log
+    - kestrel-ccache:/ws/.ccache
+    - ./data:/data          # rosbags, datasets, maps, vocabularies
+  # Host networking + shared IPC let ROS 2 (DDS) talk to nodes on the host or other containers
+  # and the robot's network without port juggling.
+  network_mode: host
+  ipc: host
+  environment:
+    ROS_DOMAIN_ID: ${ROS_DOMAIN_ID:-0}
+  working_dir: /ws
+
+services:
+  build:
+    <<: *common
+    command: ["/ws/src/kestrel_slam/docker/scripts/build.sh"]
+
+  test:
+    <<: *common
+    command: ["/ws/src/kestrel_slam/docker/scripts/test.sh"]
+
+  shell:
+    <<: *common
+    stdin_open: true
+    tty: true
+    command: ["bash"]
+
+  # Records a rosbag from the Gemini 335Lg. Extra arguments are forwarded to the launch file:
+  #   docker compose run --rm capture session:=lab_loop scenario:=loop laser_mode:=interleave
+  capture:
+    <<: *common
+    user: root                       # only to grant USB access; drops to your uid immediately
+    privileged: true                 # USB hot-plug and device access
+    stdin_open: true
+    tty: true
+    volumes:
+      - .:/ws/src/kestrel_slam
+      - kestrel-build:/ws/build
+      - kestrel-install:/ws/install
+      - kestrel-log:/ws/log
+      - kestrel-ccache:/ws/.ccache
+      - ./data:/data
+      - /dev:/dev
+      - /run/udev:/run/udev:ro
+    environment:
+      ROS_DOMAIN_ID: ${ROS_DOMAIN_ID:-0}
+      KESTREL_GRANT_USB: "2bc5"      # Orbbec USB vendor id
+      KESTREL_RUN_AS: kestrel
+    entrypoint: ["/usr/local/bin/kestrel-entrypoint", "/ws/src/kestrel_slam/docker/scripts/capture.sh"]
+    command: []
+
+  # Browser-based visualization (no X11 needed): open https://app.foxglove.dev and connect to
+  # ws://localhost:8765. Works for live capture and for bag replay.
+  foxglove:
+    <<: *common
+    command: ["ros2", "launch", "foxglove_bridge", "foxglove_bridge_launch.xml", "port:=8765"]
+
+volumes:
+  kestrel-build:
+  kestrel-install:
+  kestrel-log:
+  kestrel-ccache:

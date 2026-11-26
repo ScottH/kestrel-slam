@@ -1,0 +1,26 @@
+// Open this repository in VS Code and choose "Reopen in Container": you get the full toolchain
+// (ROS 2 Jazzy, Eigen/OpenCV/Ceres, clangd, gdb) without installing anything on the host.
+{
+  "name": "Kestrel SLAM",
+  "dockerComposeFile": ["../compose.yaml"],
+  "service": "shell",
+  "workspaceFolder": "/ws/src/kestrel_slam",
+  "overrideCommand": true,
+  "remoteUser": "kestrel",
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "llvm-vs-code-extensions.vscode-clangd",
+        "ms-python.python",
+        "ms-vscode.cmake-tools",
+        "twxs.cmake",
+        "redhat.vscode-yaml"
+      ],
+      "settings": {
+        // colcon writes compile_commands.json per package; clangd finds kestrel_core's here.
+        "clangd.arguments": ["--compile-commands-dir=/ws/build/kestrel_core", "--header-insertion=never"],
+        "C_Cpp.intelliSenseEngine": "disabled"
+      }
+    }
+  }
+}

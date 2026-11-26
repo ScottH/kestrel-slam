@@ -1,0 +1,6 @@
+# Load a previously saved map as a fixed prior. Tracking continues in its own frame until the
+# robot relocalizes against the loaded map; then map -> odom is published.
+string path
+---
+bool success
+string message

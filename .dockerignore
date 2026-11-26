@@ -1,0 +1,8 @@
+build/
+install/
+log/
+results/
+data/
+.git/
+.claude/
+**/__pycache__/

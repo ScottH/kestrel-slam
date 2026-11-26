@@ -1,0 +1,41 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# Orbbec Gemini 335L / 335Lg at 848x480 @ 30 Hz, IMU at 200 Hz.
+#
+# The camera intrinsics and extrinsics below are NOMINAL placeholders (95 mm baseline, ideal
+# pinhole). Real values come from one of:
+#   1. the driver's factory calibration (camera_info + TF), which the ROS node will read
+#      automatically from M9 on, or
+#   2. a Kalibr calibration (recommended for best accuracy) — see docs/hardware/capture_guide.md
+#      for how to record the calibration sequences.
+# Run `kestrel_info <this file>` to see every resolved value, including defaults.
+
+camera:
+  model: pinhole-radtan
+  width: 848
+  height: 480
+  rate_hz: 30
+  left:  { fx: 430.0, fy: 430.0, cx: 424.0, cy: 240.0, distortion: [0.0, 0.0, 0.0, 0.0] }
+  right: { fx: 430.0, fy: 430.0, cx: 424.0, cy: 240.0, distortion: [0.0, 0.0, 0.0, 0.0] }
+  T_imu_left:  [1, 0, 0, 0.0,    0, 1, 0, 0,  0, 0, 1, 0,  0, 0, 0, 1]
+  T_imu_right: [1, 0, 0, 0.095,  0, 1, 0, 0,  0, 0, 1, 0,  0, 0, 0, 1]
+  time_offset_s: 0.0
+
+imu:
+  # Conservative values for a consumer MEMS IMU; refine with an Allan-variance recording
+  # (scenario:=calib_imu in the capture tool).
+  accel_noise_density: 0.08
+  gyro_noise_density: 0.004
+  accel_random_walk: 0.002
+  gyro_random_walk: 4.0e-5
+  rate_hz: 200
+
+frontend:
+  max_features: 200
+  use_clahe: true     # IR images are often low-contrast
+
+loop_closure:
+  vocabulary_path: /data/vocabulary/kestrel_orb.voc   # trained in M5
+
+mapping:
+  max_integration_range_m: 5.0   # passive-stereo depth is noisy beyond ~5 m at 95 mm baseline

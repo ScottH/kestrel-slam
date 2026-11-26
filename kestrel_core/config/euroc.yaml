@@ -1,0 +1,47 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# EuRoC MAV dataset (Burri et al., IJRR 2016): VI-Sensor, 2x MT9V034 global-shutter cameras
+# (752x480 @ 20 Hz) + ADIS16448 IMU (200 Hz). Values from the dataset's sensor.yaml files.
+# Only keys that differ from the built-in defaults need to appear here.
+
+camera:
+  model: pinhole-radtan
+  width: 752
+  height: 480
+  rate_hz: 20
+  left:   # cam0
+    fx: 458.654
+    fy: 457.296
+    cx: 367.215
+    cy: 248.375
+    distortion: [-0.28340811, 0.07395907, 0.00019359, 1.76187114e-05]
+  right:  # cam1
+    fx: 457.587
+    fy: 456.134
+    cx: 379.999
+    cy: 255.238
+    distortion: [-0.28368365, 0.07451284, -0.00010473, -3.55590700e-05]
+  # T_BS of cam0 / cam1 (camera → body, body = IMU).
+  T_imu_left:
+    - [0.0148655429818, -0.999880929698, 0.00414029679422, -0.0216401454975]
+    - [0.999557249008, 0.0149672133247, 0.025715529948, -0.064676986768]
+    - [-0.0257744366974, 0.00375618835797, 0.999660727178, 0.00981073058949]
+    - [0.0, 0.0, 0.0, 1.0]
+  T_imu_right:
+    - [0.0125552670891, -0.999755099723, 0.0182237714554, -0.0198435579556]
+    - [0.999598781151, 0.0130119051815, 0.0251588363115, 0.0453689425024]
+    - [-0.0253898008918, 0.0179005838253, 0.999517347077, 0.00786212447038]
+    - [0.0, 0.0, 0.0, 1.0]
+
+imu:
+  # Datasheet values from the dataset. Real systems usually inflate these (x2-x10) to absorb
+  # unmodelled effects; tuning happens in M3/M10 and will be recorded here.
+  accel_noise_density: 2.0e-3
+  gyro_noise_density: 1.6968e-4
+  accel_random_walk: 3.0e-3
+  gyro_random_walk: 1.9393e-5
+  rate_hz: 200
+
+frontend:
+  max_features: 150
+  min_feature_distance_px: 30

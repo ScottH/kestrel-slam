@@ -1,0 +1,6 @@
+# Reset SLAM. With keep_map = true only the odometry is restarted (a new tracking sequence that
+# will be merged back into the map on the next loop closure); otherwise everything is cleared.
+bool keep_map
+---
+bool success
+string message

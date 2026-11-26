@@ -1,0 +1,17 @@
+# colcon / CMake build products
+build/
+install/
+log/
+# Results, datasets and recordings (large; live in Docker volumes or ./data)
+results/
+data/*
+!data/.gitkeep
+*.mcap
+*.db3
+# Editors / tools
+.vscode/*
+!.vscode/extensions.json
+.idea/
+*.swp
+__pycache__/
+.claude/worktrees/

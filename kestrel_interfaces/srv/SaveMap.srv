@@ -1,0 +1,8 @@
+# Save the current map (keyframes, descriptors, pose graph, persistence state, voxel map) to disk.
+# An empty path saves to the node's configured default location.
+string path
+---
+bool success
+string message
+# Absolute path the map was written to.
+string saved_path

@@ -1,0 +1,7 @@
+# Google style with a wider column limit: tutorial code has long, explanatory names.
+BasedOnStyle: Google
+ColumnLimit: 100
+IndentWidth: 2
+DerivePointerAlignment: false
+PointerAlignment: Left
+AllowShortFunctionsOnASingleLine: Inline

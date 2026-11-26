@@ -1,11 +1,11 @@
 # syntax=docker/dockerfile:1.7
 # SPDX-License-Identifier: Apache-2.0
 #
-# Kestrel SLAM container images. Everything (compilers, ROS 2, Eigen/OpenCV/Ceres, the Orbbec
+# Kestrel SLAM container images. Everything (compilers, ROS 2, Eigen/OpenCV/GTSAM, the Orbbec
 # driver, evaluation tools) lives here, so the host only needs Docker.
 #
 # Stages
-#   base     ROS 2 Jazzy + the libraries kestrel_core needs to build.
+#   base     ROS 2 Jazzy + the libraries kestrel_core needs (Eigen, OpenCV, GTSAM, yaml-cpp).
 #   orbbec   builds the OrbbecSDK_ROS2 driver (pinned commit) into /opt/orbbec_ws.
 #   dev      base + driver + developer tools (gdb, clang-format, evo, foxglove bridge, ...).
 #            This is the image used by `docker compose run build|test|shell|capture`.
@@ -29,7 +29,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
     rm -f /etc/apt/apt.conf.d/docker-clean && apt-get update && apt-get install -y --no-install-recommends \
       build-essential cmake ninja-build ccache git curl ca-certificates \
-      libeigen3-dev libopencv-dev libceres-dev libyaml-cpp-dev libgtest-dev \
+      libeigen3-dev libopencv-dev libyaml-cpp-dev libgtest-dev \
       python3-colcon-common-extensions python3-pip python3-numpy python3-yaml \
       ros-${ROS_DISTRO}-cv-bridge \
       ros-${ROS_DISTRO}-image-transport \
@@ -41,7 +41,8 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
       ros-${ROS_DISTRO}-visualization-msgs \
       ros-${ROS_DISTRO}-rosbag2-storage-mcap \
       ros-${ROS_DISTRO}-rosbag2-compression-zstd \
-      ros-${ROS_DISTRO}-rmw-cyclonedds-cpp
+      ros-${ROS_DISTRO}-rmw-cyclonedds-cpp \
+      ros-${ROS_DISTRO}-gtsam
 
 # ================================================================================================
 FROM base AS orbbec
@@ -134,7 +135,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
     apt-get update && apt-get install -y --no-install-recommends \
       libopencv-core406t64 libopencv-imgproc406t64 libopencv-features2d406t64 \
-      libopencv-video406t64 libopencv-calib3d406t64 libceres4t64 libyaml-cpp0.8 \
+      libopencv-video406t64 libopencv-calib3d406t64 libyaml-cpp0.8 \
       libgflags2.2 libgoogle-glog0v6t64 libusb-1.0-0 libdw1t64 \
       ros-${ROS_DISTRO}-cv-bridge ros-${ROS_DISTRO}-image-transport \
       ros-${ROS_DISTRO}-message-filters ros-${ROS_DISTRO}-tf2-ros \
@@ -144,6 +145,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
       ros-${ROS_DISTRO}-statistics-msgs ros-${ROS_DISTRO}-robot-state-publisher \
       ros-${ROS_DISTRO}-xacro ros-${ROS_DISTRO}-rosbag2-storage-mcap \
       ros-${ROS_DISTRO}-rosbag2-compression-zstd ros-${ROS_DISTRO}-rmw-cyclonedds-cpp \
+      ros-${ROS_DISTRO}-gtsam \
       python3-psutil python3-tabulate python3-yaml
 COPY --from=orbbec /opt/orbbec_ws/install /opt/orbbec_ws/install
 COPY --from=builder /opt/kestrel/install /opt/kestrel/install

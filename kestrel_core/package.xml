@@ -14,7 +14,7 @@
 
   <depend>eigen</depend>
   <depend>libopencv-dev</depend>
-  <depend>libceres-dev</depend>
+  <depend>gtsam</depend>
   <depend>yaml-cpp</depend>
 
   <test_depend>gtest</test_depend>

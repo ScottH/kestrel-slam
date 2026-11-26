@@ -23,6 +23,9 @@ x-kestrel-common: &common
     context: .
     dockerfile: docker/Dockerfile
     target: dev
+    # Build with the host's network stack: avoids failures when Docker's bridge network has no
+    # route to the package mirrors (VPNs, some firewalls), and is otherwise equivalent.
+    network: host
     args:
       ROS_DISTRO: jazzy
       USER_UID: ${KESTREL_UID:-1000}

@@ -19,7 +19,7 @@ int main(int argc, char** argv) {
   std::cout << "# Kestrel SLAM " << KESTREL_VERSION << "\n"
             << "#   Eigen  " << KESTREL_EIGEN_VERSION << "\n"
             << "#   OpenCV " << KESTREL_OPENCV_VERSION << "\n"
-            << "#   Ceres  " << KESTREL_CERES_VERSION << "\n";
+            << "#   GTSAM  " << KESTREL_GTSAM_VERSION << "\n";
   try {
     const kestrel::Config config = argc > 1 ? kestrel::loadConfig(argv[1]) : kestrel::Config{};
     std::cout << "# Resolved configuration" << (argc > 1 ? std::string(" from ") + argv[1] : "")

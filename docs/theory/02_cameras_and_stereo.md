@@ -208,11 +208,19 @@ especially $\mathbf{T}_{BC}$. The hardware guide (`docs/hardware/`) gives the re
 
 ## 7. In Kestrel
 
-| Concept | Where (planned) |
-|---------|-----------------|
-| `pinhole-radtan` and `pinhole-equidistant` camera models (project, undistort, Jacobians) | `kestrel/sensors/camera.hpp` — **planned (M1)** |
-| Stereo KLT matching + epipolar check | `kestrel/frontend/feature_tracker.hpp` — **planned (M2)** |
-| DLT triangulation with cheirality, parallax and reprojection checks | `kestrel/estimator/feature_manager.hpp` — **planned (M3)** |
+Lens models and rectification come from **OpenCV**. The rectified stereo model used by the
+estimator comes from **GTSAM**. Kestrel's `StereoRig` only does the frame bookkeeping between them.
+
+| Concept | Where |
+|---------|-------|
+| Radtan and equidistant (fisheye) lens models, iterative undistortion | OpenCV `projectPoints`/`undistortPoints` and `cv::fisheye::*` |
+| Stereo rectification ($\mathbf{R}_1,\mathbf{R}_2,\mathbf{P}_1,\mathbf{P}_2$) | OpenCV `stereoRectify` / `fisheye::stereoRectify`, called by `kestrel/sensors/stereo_rig.cpp` (M1) |
+| Rectified pinhole + baseline, depth from disparity $z = f b / d$ | `gtsam::Cal3_S2Stereo`, `gtsam::StereoCamera::backproject`, via `StereoRig::triangulate()` (M1) |
+| Camera–IMU pose of the *rectified* left camera, $\mathbf{T}_{BL'} = \mathbf{T}_{BL}\,\mathbf{R}_1^\top$ | `StereoRig::bodyToRectifiedLeft()` (M1) |
+| Rectifying feature *points* instead of whole images | `StereoRig::rectifyLeft/Right`, `unrectifyLeft/Right` (M1) |
+| Tests: row alignment, round trip, triangulation vs. ground truth (EuRoC + fisheye) | `kestrel_core/test/test_stereo_rig.cpp` (M1) |
+| Stereo KLT matching + row check on rectified coordinates | `kestrel/frontend/`: **planned (M2)** |
+| Multi-view triangulation, cheirality and reprojection checks | GTSAM smart stereo factors / `triangulatePoint3`: **planned (M3)** |
 | Camera parameters and extrinsics | `camera:` section of the YAML config (`config.hpp`, available now) |
 | Laser modes / capture settings | `kestrel_capture/launch/capture.launch.py` (M0) |
 

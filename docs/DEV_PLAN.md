@@ -39,7 +39,7 @@ Indoor is the primary target; outdoor (sunlight, longer depth range) is a suppor
  ┌──────────────┐  FeatureFrame  ┌──────────────────────────┐  Keyframes  ┌───────────────────────────┐
  │  Front-end   │ ─────────────► │  Sliding-window VIO      │ ──────────► │  Map manager (own thread) │
  │ stereo KLT,  │                │  IMU preintegration,     │             │  • BoW place recognition  │
- │ gyro-aided   │ ◄───────────── │  Ceres BA, Schur         │ ◄────────── │  • PnP loop verification  │
+ │ gyro-aided   │ ◄───────────── │  GTSAM iSAM2 smoother,   │ ◄────────── │  • PnP loop verification  │
  │ prediction   │  dynamic ids / │  marginalization,        │  drift corr │  • 4-DoF pose graph       │
  └──────────────┘  mask grid     │  dynamic-feature filter  │  T_map_odom │  • persistence filters    │
                                  └──────────────────────────┘             │  • voxel map + changes    │
@@ -55,9 +55,24 @@ Indoor is the primary target; outdoor (sunlight, longer depth range) is a suppor
 * Every algorithm cites its source paper, with equation references in comments where useful.
 * Configuration lives in a single YAML file read by both the ROS node and the offline tools.
 
-**Dependencies:** Eigen 3.4, OpenCV ≥ 4.5, Ceres ≥ 2.1 (Manifold API), GoogleTest, and ROS 2 **Jazzy**.
-All of these are **inside the Docker image**, never on the host. No GTSAM, no Pangolin, no
-deep-learning runtime is required. Learned components are optional plug-ins.
+**Dependencies:** Eigen 3.4, OpenCV 4.6, **GTSAM 4.2** (ROS-packaged), yaml-cpp, GoogleTest, and ROS 2 **Jazzy**; later OctoMap (M8) and DBoW2 (M5, vendored at a pinned commit).
+All of these are **inside the Docker image**, never on the host. No deep-learning runtime is required. Learned components are optional plug-ins.
+
+**Library policy:** common functionality comes from established, well-tested libraries; Kestrel code is written only where there is a compelling reason (clarity, simplicity, performance or tutorial value), and that reason is stated in the file's TUTORIAL NOTE. The theory chapters still derive everything, so the libraries are not black boxes.
+
+| Need | Library | Kestrel writes |
+|------|---------|----------------|
+| Rotations, poses, Lie-group calculus | GTSAM (`Rot3`, `Pose3`, `NavState`) | nothing |
+| IMU preintegration | GTSAM `PreintegratedCombinedMeasurements` (Forster et al.'s reference implementation) | YAML → parameters; IMU stream cut at frame times |
+| Camera models, undistortion, rectification | OpenCV (`stereoRectify`, `undistortPoints`, fisheye variants) | frame bookkeeping (`StereoRig`) |
+| Features, KLT, RANSAC, PnP | OpenCV | front-end policy (gyro aid, masks, feedback) |
+| Sliding-window optimization + marginalization | GTSAM `IncrementalFixedLagSmoother` (iSAM2) | window/keyframe policy |
+| Visual factors | GTSAM smart / generic stereo factors | landmark management |
+| Pose graph | GTSAM `Pose3` between-factors, robust kernels | loop-edge policy |
+| Place recognition | DBoW2 | vocabulary training recipe |
+| Voxel occupancy + ray casting | OctoMap | change detection on top |
+| Persistence filter | — (no widely used library; ~50 lines) | the filter itself (tutorial value, tiny) |
+| Dynamic heat grid, lifelong map logic, ROS node | — (project-specific) | all of it |
 
 ---
 
@@ -65,17 +80,17 @@ deep-learning runtime is required. Learned components are optional plug-ins.
 
 | Subsystem | Choice | Rationale / reference |
 |-----------|--------|-----------------------|
-| Features | Shi-Tomasi corners + pyramidal KLT, forward–backward check, gyro-rotation-compensated prediction | Fast and accurate on a global-shutter sensor (VINS-Fusion / OpenVINS style) |
-| Stereo matching | KLT left→right with an epipolar check against calibrated extrinsics | Works without rectified images |
-| IMU | On-manifold preintegration, midpoint integration, first-order bias correction | Forster et al., TRO 2017 |
-| Estimator | Fixed-lag sliding window (10 keyframes), Ceres, inverse-depth landmarks, Cauchy loss | Qin et al. (VINS); Leutenegger et al. (OKVIS) |
-| Marginalization | Schur complement → linear prior; keyframe vs. non-keyframe policy | Keeps information from dropped states |
+| Features | Shi-Tomasi corners + pyramidal KLT (OpenCV), forward–backward check, gyro-rotation-compensated prediction | Fast and accurate on a global-shutter sensor (VINS-Fusion / OpenVINS style) |
+| Stereo matching | KLT left→right; matches checked on *rectified* coordinates (same row) via OpenCV rectification of feature points | Rectified model is what GTSAM's stereo factors expect; points, not images, are rectified |
+| IMU | GTSAM on-manifold preintegration (combined bias factor) | Forster et al., TRO 2017 — the authors' own implementation |
+| Estimator | Fixed-lag smoothing with GTSAM iSAM2 (`IncrementalFixedLagSmoother`), stereo factors, robust (Huber/Cauchy) noise | Same structure as Kimera-VIO; VINS/OKVIS-style windowing |
+| Marginalization | Handled by the fixed-lag smoother (Schur complement inside iSAM2); we choose what leaves the window | Removes the most error-prone hand-written part of VIO |
 | Initialization | Stereo-inertial: gravity from the accelerometer, poses from stereo PnP, gyro-bias alignment, then full BA | Stereo gives metric scale, so start-up is fast and robust |
 | Dynamic objects (short-term) | (1) Robust loss + χ² reprojection gating after each solve; (2) a decaying image-grid "dynamic heat" map that blocks new features in moving regions; (3) an optional external semantic-mask topic | Geometric by default; semantic segmentation (e.g., YOLO-seg) is a plug-in, not a dependency |
-| **Loop closure** | ORB descriptors on keyframes → hierarchical bag of words (our own trainer, DBoW2-style tf-idf) → temporal-consistency check → descriptor matching + **PnP-RANSAC** against stereo-triangulated 3D points → **4-DoF pose graph** (x, y, z, yaw; roll and pitch are observable from gravity), in a dedicated thread | Gálvez-López & Tardós (DBoW2); Qin et al. (VINS 4-DoF pose graph) |
+| **Loop closure** | ORB descriptors on keyframes → **DBoW2** bag of words (vocabulary trained on our data) → temporal-consistency check → descriptor matching + **PnP-RANSAC** (OpenCV) against stereo-triangulated 3D points → **GTSAM pose graph** with robust loop edges, in a dedicated thread | Gálvez-López & Tardós (DBoW2); Qin et al. (VINS pose graph) |
 | Multi-session / relocalization | Each tracking run is a *sequence*. A loaded prior map is a fixed sequence. Live sequences merge on a verified cross-sequence loop. Tracking loss starts a new sequence instead of losing the map. | Same approach as VINS-Fusion map merging and the ORB-SLAM3 Atlas |
 | Changing environment (long-term) | A **persistence filter** per map point (Rosen, Mason & Leonard, ICRA 2016): a Bayesian survival estimate from detections and misses, using depth to tell "occluded" from "gone". Low-persistence points are pruned; stale keyframes leave place recognition. | Principled removal of objects that moved or disappeared |
-| Dense map | Hashed voxel occupancy with clamped log-odds (so it can change back). Depth from keyframes is ray-cast, appeared/disappeared voxel events are recorded, a 2D `OccupancyGrid` is projected for Nav2, and the map is rebuilt from stored keyframe clouds after large loop corrections. | OctoMap-style clamping keeps the map responsive to change |
+| Dense map | **OctoMap** occupancy (clamped log-odds, so it can change back; built-in ray casting) fed with keyframe depth. Kestrel adds appeared/disappeared change events, the 2D `OccupancyGrid` projection for Nav2, and rebuilds after large loop corrections. | Hornung et al. (OctoMap); clamping keeps the map responsive to change |
 
 ---
 
@@ -87,7 +102,7 @@ on a Jetson or a desktop GPU).
 ```
 compose.yaml              services below (at the repo root so `docker compose` works anywhere)
 docker/
-├── Dockerfile            multi-stage: base (ROS 2 Jazzy + Eigen/OpenCV/Ceres/GTest)
+├── Dockerfile            multi-stage: base (ROS 2 Jazzy + Eigen/OpenCV/GTSAM/GTest)
 │                           → orbbec (OrbbecSDK_ROS2 driver, pinned commit)
 │                           → dev (driver + build tools, evo, gdb, clang-format, foxglove bridge)
 │                           → builder → runtime (slim image with the built workspace, for the robot)
@@ -154,21 +169,25 @@ collected in parallel with development). Also: `docs/theory/` and `docs/REFERENC
 teaching material the module chapters build on.
 ✅ `docker compose run --rm build` and `… test` succeed on a clean machine with only Docker installed.
 
-### M1 — Math & sensor models
-`SE3`/SO(3) utilities, pinhole-radtan and equidistant camera models, IMU noise model, and
-**IMU preintegration** with covariance and bias Jacobians.
-✅ Exp/Log round-trip tests; numeric-vs-analytic Jacobians; preintegration matches ground truth on a
-simulated trajectory; bias correction is accurate to first order.
+### M1 — Sensor models on proven libraries
+GTSAM (poses, IMU preintegration, rectified stereo camera) and OpenCV (lens models, stereo
+rectification) are integrated behind small Kestrel adapters: YAML → GTSAM IMU parameters, IMU
+stream cut and interpolated at frame times, and a `StereoRig` that rectifies feature points and
+keeps the camera–IMU frames consistent.
+✅ GTSAM toolchain smoke test (Eigen alignment, iSAM2); IMU prediction matches GTSAM's analytic
+scenarios; splitting intervals is consistent; predicted IMU covariance matches Monte-Carlo
+(validates the noise units); stereo rectification + triangulation recover ground truth on the
+EuRoC calibration and a fisheye variant.
 
 ### M2 — Front-end
 Stereo KLT tracker, gyro-aided prediction, F-matrix RANSAC, grid-uniform detection, masks.
 ✅ Runs on EuRoC images; track-length and stereo-match statistics are logged; ≥ 150 features per frame on MH_01.
 
 ### M3 — Sliding-window VIO (the core)
-Feature manager, triangulation, Ceres factors (IMU, mono and stereo reprojection), custom pose
-manifold, marginalization, initializer, keyframe policy, failure detection and reset.
+Feature/landmark manager, GTSAM fixed-lag smoother (iSAM2) with combined IMU factors and stereo
+factors, window and keyframe policy, stereo-inertial initializer, failure detection and reset.
 ✅ **Synthetic end-to-end test** (simulated landmarks + IMU, no images): ATE < 2 cm.
-✅ All factor Jacobians verified numerically.
+✅ Any custom factor's Jacobians verified numerically (library factors are trusted).
 ✅ EuRoC MH_01–05, V1, V2 run to completion, with VIO-only ATE within ~1.5× of published VINS-Fusion stereo-inertial results.
 
 ### M4 — Dynamic-object robustness
@@ -226,7 +245,8 @@ calibration (Kalibr also runs in Docker).
 
 ## 7. Testing strategy
 
-* **Unit tests** (GoogleTest) for every math module, with numeric-differentiation checks for every factor.
+* **Unit tests** (GoogleTest) for every module. Library code is not re-tested; tests check that we
+  *use* it correctly (units, frames, conventions). Custom factors get numeric-Jacobian checks.
 * **Synthetic integration tests**: a simulator generates a trajectory, noisy and biased IMU readings,
   and landmark observations, including moving and disappearing objects. This lets us test the
   back-end, loop closure and lifelong logic deterministically, without datasets.
@@ -247,7 +267,7 @@ calibration (Kalibr also runs in Docker).
 |------|------------|
 | **IR laser projector dot pattern** moves with the camera and creates fake static features | Default to laser off for tracking, and document the driver's interleaved laser on/off mode so depth (laser on) and tracking (laser off) can share one stream. The front end can drop laser-on frames. |
 | Factory camera–IMU extrinsics or time offset are imprecise | A Kalibr calibration guide; optional online extrinsic estimation as a stretch goal |
-| A BoW vocabulary must be trained (ORB-SLAM's vocabulary is GPL) | Ship our own trainer and a documented training recipe. Loop closure is disabled with a warning if no vocabulary is present. |
+| A BoW vocabulary must be trained (ORB-SLAM's vocabulary is GPL) | Use DBoW2's vocabulary builder with a documented training recipe (EuRoC + our recordings). Loop closure is disabled with a warning if no vocabulary is present. |
 | "SOTA" claims | Report only measured numbers, side by side with published baselines on identical sequences |
 | USB/GMSL camera access from inside Docker | Compose `slam` service runs privileged with `/dev` and udev rules mounted; GMSL on Jetson needs the host's JetPack camera drivers, which the hardware doc covers |
 | GUI (RViz) from a container on a laptop | Foxglove bridge as the default (browser-based); X11/Wayland forwarding documented as an alternative |

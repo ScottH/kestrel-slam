@@ -21,7 +21,7 @@ this file tracks *what is done* and *what is next*.
 
 | Milestone | Scope | Status |
 |-----------|-------|--------|
-| M0 | Scaffolding, Docker, capture tool, theory docs | 🟡 code done; PR #2 awaiting green CI + merge |
+| M0 | Scaffolding, Docker, capture tool, theory docs | 🟡 CI green; PR #2 awaiting merge |
 | M1 | Lie groups, camera models, IMU preintegration | ⬜ next |
 | M2 | Stereo front-end | ⬜ |
 | M3 | Sliding-window VIO | ⬜ |
@@ -58,7 +58,7 @@ running on your own camera.
 **Verify**
 - [x] 11 C++ + 3 Python tests pass locally in Docker
 - [x] Clean-clone reproduction of the CI command passes
-- [ ] CI green on GitHub (after the `--no-build` fix)
+- [x] CI green on GitHub (run 45876537420, after the `--no-build` fix)
 
 **Exit**
 - [ ] PR #2 merged into `main`; PR #1 closed and branch `m0-scaffolding` deleted

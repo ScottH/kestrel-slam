@@ -25,7 +25,7 @@ option(KESTREL_WARNINGS_AS_ERRORS "Treat compiler warnings as errors (CI)" OFF)
 find_package(ament_cmake QUIET)
 find_package(Eigen3 3.3 REQUIRED NO_MODULE)
 find_package(OpenCV 4 REQUIRED COMPONENTS core imgproc features2d video calib3d)
-find_package(Ceres 2.1 REQUIRED)
+find_package(GTSAM 4.2 REQUIRED)  # poses, IMU preintegration, factor graphs, iSAM2
 find_package(yaml-cpp REQUIRED)
 if(TARGET yaml-cpp::yaml-cpp)
   set(KESTREL_YAML_TARGET yaml-cpp::yaml-cpp)
@@ -43,6 +43,8 @@ configure_file(include/kestrel/version.hpp.in
 add_library(kestrel_core
   src/logging.cpp
   src/config.cpp
+  src/imu.cpp
+  src/stereo_rig.cpp
 )
 target_include_directories(kestrel_core PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
@@ -52,7 +54,7 @@ target_include_directories(kestrel_core PUBLIC
 target_link_libraries(kestrel_core PUBLIC
   Eigen3::Eigen
   ${OpenCV_LIBS}
-  Ceres::ceres
+  gtsam
   ${KESTREL_YAML_TARGET}
   Threads::Threads
 )
@@ -76,6 +78,9 @@ if(KESTREL_BUILD_TESTS)
   include(GoogleTest)
   set(KESTREL_TESTS
     test_config
+    test_gtsam_smoke
+    test_imu
+    test_stereo_rig
   )
   foreach(test_name IN LISTS KESTREL_TESTS)
     add_executable(${test_name} test/${test_name}.cpp)
@@ -97,7 +102,7 @@ install(TARGETS kestrel_info RUNTIME DESTINATION lib/${PROJECT_NAME})
 
 if(ament_cmake_FOUND)
   ament_export_targets(kestrel_coreTargets HAS_LIBRARY_TARGET)
-  ament_export_dependencies(Eigen3 OpenCV Ceres yaml-cpp)
+  ament_export_dependencies(Eigen3 OpenCV GTSAM yaml-cpp)
   ament_package()
 else()
   install(EXPORT kestrel_coreTargets NAMESPACE kestrel_core:: DESTINATION lib/cmake/kestrel_core)

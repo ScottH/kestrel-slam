@@ -3,7 +3,8 @@
 **Stereo-inertial SLAM for ROS 2 with loop closure and lifelong mapping in changing environments,
 built for the Orbbec Gemini 335L / 335Lg and written as teaching code.**
 
-> 🚧 **Status: milestone M0 (scaffolding) complete.** The SLAM algorithms are being built milestone
+> 🚧 **Status: M0 (scaffolding) done; M1 (sensor models on GTSAM + OpenCV) in review.** The SLAM
+> algorithms are being built milestone
 > by milestone. Progress is tracked as a checklist in [docs/ROADMAP.md](docs/ROADMAP.md); the
 > design rationale is in [docs/DEV_PLAN.md](docs/DEV_PLAN.md). The data-capture tool already
 > works, so you can start recording datasets now.

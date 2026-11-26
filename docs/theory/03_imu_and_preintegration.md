@@ -235,12 +235,23 @@ $2\,\mathrm{vec}(\cdot)$ of the quaternion product instead of the exact Log
 
 ## 8. In Kestrel
 
-| Concept | Where (planned) |
-|---------|-----------------|
-| Noise parameters | `imu:` section of the config (`config.hpp`, available now) |
-| `ImuPreintegration`: midpoint integration, 15×15 covariance and Jacobian, bias correction, re-propagation | `kestrel/imu/preintegration.hpp` — **planned (M1)** |
-| IMU factor (Ceres, autodiff) | `kestrel/estimator/factors.hpp` — **planned (M3)** |
-| Tests: preintegration vs. ground truth on a simulated trajectory; bias-Jacobian vs. numeric re-integration | `test/test_preintegration.cpp` — **planned (M1)** |
+Preintegration itself is **GTSAM's** `PreintegratedCombinedMeasurements`, the reference
+implementation of [Forster17] by the paper's authors. Kestrel adds the two pieces a library cannot
+know about: the units of *your* noise model, and how *your* IMU stream lines up with camera frames.
+
+| Concept | Where |
+|---------|-------|
+| Noise parameters (continuous-time densities, Kalibr units) | `imu:` section of the config (`config.hpp`) |
+| Densities → GTSAM covariances, z-up gravity | `kestrel::makeImuParams()` in `kestrel/imu/imu.hpp` (M1) |
+| Cutting the IMU stream at frame times (boundary interpolation, midpoint rule) | `kestrel::integrateImu()` (M1) |
+| Preintegrated deltas, covariance, bias Jacobians, bias correction | `gtsam::PreintegratedCombinedMeasurements` (`deltaXij()`, `preintMeasCov()`, `biasCorrectedDelta()`) |
+| IMU factor with bias random walk | `gtsam::CombinedImuFactor`: **planned (M3)** |
+| Tests: analytic-trajectory accuracy, second-order convergence, interval splitting, **Monte-Carlo covariance check** | `kestrel_core/test/test_imu.cpp` (M1) |
+
+> **Convention trap: state ordering.** GTSAM's preintegrated covariance (`preintMeasCov()`) is
+> ordered $[\delta\boldsymbol\theta, \delta\mathbf{p}, \delta\mathbf{v}, \delta\mathbf{b}_a, \delta\mathbf{b}_g]$,
+> rotation first, whereas the VINS-style residual earlier in this chapter puts position first.
+> The mathematics is identical; only the block positions differ.
 
 ---
 

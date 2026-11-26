@@ -271,12 +271,22 @@ coordinates, which is where `Minus` and `MinusJacobian` come in.
 
 ## 7. In Kestrel
 
-| Concept | Where (planned) |
-|---------|-----------------|
-| hat/vee, Exp/Log, $\mathbf{J}_r$, $\mathbf{J}_r^{-1}$, templated quaternion Log for autodiff | `kestrel/common/lie.hpp` — **planned (M1)** |
-| `SE3` helper type (compose, inverse, transform points) | `kestrel/common/types.hpp` — **planned (M1)** |
-| Pose manifold with right perturbation (`Plus/Minus` + Jacobians) | `kestrel/estimator/manifold.hpp` — **planned (M3)** |
-| Unit tests: Exp/Log round trip, $\mathbf{J}_r$ against numeric differentiation, manifold `Minus(Plus(x,δ),x)=δ` | `kestrel_core/test/test_lie.cpp` — **planned (M1)** |
+Kestrel does not implement Lie-group math itself. It uses **GTSAM**, whose `Rot3`, `Pose3` and
+`NavState` types implement everything in this chapter and are covered by GTSAM's own test suite
+(library policy: DEV_PLAN §2). This chapter is what you need to *read* GTSAM code correctly.
+
+| Concept | Where |
+|---------|-------|
+| $\mathrm{Exp}$/$\mathrm{Log}$ on SO(3) and SE(3) | `gtsam::Rot3::Expmap/Logmap`, `gtsam::Pose3::Expmap/Logmap`. Kestrel's GTSAM is built with `GTSAM_ROT3_EXPMAP`/`GTSAM_POSE3_EXPMAP`, so `retract` *is* the exponential map |
+| Right perturbation $\mathbf{T}\,\mathrm{Exp}(\boldsymbol\xi)$ | `Pose3::retract(ξ)` / `localCoordinates`: GTSAM's manifold optimization uses exactly this convention |
+| $\mathbf{J}_r$, $\mathbf{J}_r^{-1}$ | `Rot3::ExpmapDerivative`, `Rot3::LogmapDerivative` |
+| Poses in configs (4×4 matrices) → GTSAM | `gtsam::Pose3(Eigen::Matrix4d)`, used in `kestrel/sensors/stereo_rig.cpp` (M1) |
+| Toolchain check (Eigen alignment with GTSAM types) | `kestrel_core/test/test_gtsam_smoke.cpp` (M1) |
+
+> **Convention trap: tangent ordering.** GTSAM orders the SE(3) tangent vector as
+> $\boldsymbol\xi = [\boldsymbol\omega;\ \mathbf{v}]$ (**rotation first**), and `NavState`'s
+> as $[\delta\boldsymbol\theta;\ \delta\mathbf{p};\ \delta\mathbf{v}]$. Many papers put translation
+> first. Always check the ordering before reading a covariance matrix or a Jacobian block.
 
 ---
 

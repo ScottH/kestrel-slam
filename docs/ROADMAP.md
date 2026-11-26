@@ -21,8 +21,8 @@ this file tracks *what is done* and *what is next*.
 
 | Milestone | Scope | Status |
 |-----------|-------|--------|
-| M0 | Scaffolding, Docker, capture tool, theory docs | 🟡 CI green; PR #2 awaiting merge |
-| M1 | Lie groups, camera models, IMU preintegration | ⬜ next |
+| M0 | Scaffolding, Docker, capture tool, theory docs | ✅ merged (PR #2) |
+| M1 | Sensor models on GTSAM + OpenCV (IMU, stereo rectification) | 🟡 in review (branch `m1`) |
 | M2 | Stereo front-end | ⬜ |
 | M3 | Sliding-window VIO | ⬜ |
 | M4 | Dynamic-object robustness | ⬜ |
@@ -61,7 +61,8 @@ running on your own camera.
 - [x] CI green on GitHub (run 45876537420, after the `--no-build` fix)
 
 **Exit**
-- [ ] PR #2 merged into `main`; PR #1 closed and branch `m0-scaffolding` deleted
+- [x] PR #2 merged into `main`; PR #1 closed
+- [ ] Delete the leftover branch `m0-scaffolding` on GitHub
 
 **Loose ends (do opportunistically)**
 - [ ] Build and smoke-test the `runtime` image target
@@ -72,29 +73,35 @@ running on your own camera.
 
 ---
 
-## M1 — Math & sensor models
+## M1 — Sensor models on proven libraries
+
+*Library policy (see DEV_PLAN §2): GTSAM provides poses, Lie-group math and IMU preintegration;
+OpenCV provides lens models and stereo rectification. Kestrel writes only the adapters.*
 
 **Build**
-- [ ] `SE3` / SO(3): hat/vee, Exp/Log, right Jacobian and its inverse, quaternion helpers
-- [ ] Pose manifold for Ceres (right perturbation, Plus/Minus + Jacobians)
-- [ ] Camera models: pinhole-radtan, pinhole-equidistant (project, unproject, Jacobians)
-- [ ] Stereo rig: extrinsics, epipolar check, triangulation (DLT + midpoint)
-- [ ] IMU types + noise model (continuous → discrete)
-- [ ] IMU preintegration: midpoint integration, covariance, bias Jacobians, re-propagation
-- [ ] Synthetic trajectory + IMU simulator (shared by later tests)
+- [x] Docker image: GTSAM 4.2 (ROS-packaged) replaces Ceres
+- [x] `makeImuParams()`: YAML noise model → GTSAM `PreintegrationCombinedParams` (z-up gravity)
+- [x] `integrateImu()`: cut the IMU stream at frame times, interpolating boundary samples
+- [x] `StereoRig`: OpenCV stereo rectification (radtan + fisheye) of feature *points*,
+      rectified GTSAM `Cal3_S2Stereo`, body → rectified-left extrinsics, triangulation,
+      whole-image rectification for debugging
+- [x] Theory chapters 01–03: "In Kestrel" sections point at the GTSAM/OpenCV classes used
 
 **Verify**
-- [ ] Exp/Log round-trip; small-angle edge cases; Jacobians vs. numeric differentiation
-- [ ] Camera project ↔ unproject round-trip over the full image; distortion matches OpenCV
-- [ ] Triangulation error vs. noise matches the theory (∝ z²/(f·b))
-- [ ] Preintegration matches ground truth on noise-free simulated motion (< 1e-6)
-- [ ] First-order bias correction error is O(δb²)
-- [ ] Preintegrated covariance matches Monte-Carlo (within 10 %)
+- [x] GTSAM toolchain smoke test (containers of fixed-size types, incremental iSAM2)
+- [x] IMU parameters: gravity direction and noise units
+- [x] IMU prediction matches GTSAM's analytic `AcceleratingScenario` (off-grid frame times)
+- [x] Midpoint integration is second order (error ÷ ~4 when the rate doubles)
+- [x] Splitting an interval in two gives the same motion as integrating it whole
+- [x] Predicted IMU covariance matches Monte-Carlo within ±25 % (validates noise units)
+- [x] Rectification on the EuRoC calibration: matches row-aligned (< 5e-3 px), raw ↔ rectified
+      round trip, triangulated points equal ground truth in the body frame
+- [x] Same for a fisheye (equidistant) variant; nominal Gemini config gives 95 mm baseline
 
-**Data**: none (synthetic only). Ideally **D1–D3** are recorded meanwhile.
+**Data**: none (synthetic + EuRoC calibration). Ideally **D1–D3** are recorded meanwhile.
 
 **Exit**
-- [ ] All of the above green; theory chapters 01–03 cross-reference the code
+- [ ] All of the above green in CI
 
 ---
 
@@ -127,9 +134,9 @@ running on your own camera.
 ## M3 — Sliding-window VIO
 
 **Build**
-- [ ] Feature manager (tracks, inverse depth, anchors)
-- [ ] Ceres factors: IMU, mono reprojection, stereo (same frame + cross-frame)
-- [ ] Marginalization (Schur complement → prior) with keyframe / non-keyframe policy
+- [ ] Feature/landmark manager (tracks → GTSAM stereo / smart-stereo factors)
+- [ ] GTSAM `IncrementalFixedLagSmoother` window with `CombinedImuFactor`s, robust vision noise
+- [ ] Keyframe / non-keyframe policy (what enters and leaves the smoother window)
 - [ ] Stereo-inertial initialization (gravity, PnP poses, gyro bias, first BA)
 - [ ] Keyframe selection (parallax + track count)
 - [ ] Failure detection + reset into a new sequence
@@ -139,8 +146,8 @@ running on your own camera.
 - [ ] `tools/evaluate.py` (evo wrapper): ATE/RPE + plots into `./results`
 
 **Verify**
-- [ ] Every factor's Jacobian vs. numeric differentiation
-- [ ] Marginalization prior reproduces the full-problem solution on a linear toy problem
+- [ ] Any custom factor's Jacobian vs. numeric differentiation (GTSAM factors are trusted)
+- [ ] Fixed-lag smoother result matches a full batch solve on a short synthetic sequence
 - [ ] Synthetic end-to-end (simulated landmarks + IMU): ATE < 2 cm over 60 s
 - [ ] Deterministic: two runs on the same data give identical trajectories
 
@@ -182,11 +189,11 @@ running on your own camera.
 
 **Build**
 - [ ] Keyframe ORB extraction + stereo 3D points
-- [ ] Vocabulary trainer (`train_vocabulary`) + binary vocabulary file format
-- [ ] Train the default vocabulary (EuRoC + D5/D6) and document the recipe
-- [ ] BoW database + inverted index; temporal-consistency check
+- [ ] Vendor DBoW2 (pinned commit, BSD-style license) into the image
+- [ ] `train_vocabulary` tool wrapping DBoW2's builder; document the recipe (EuRoC + D5/D6)
+- [ ] DBoW2 database queries; temporal-consistency check
 - [ ] Geometric verification: descriptor matching + PnP-RANSAC
-- [ ] 4-DoF pose graph in its own thread; drift correction `T_map_odom`
+- [ ] GTSAM pose graph (robust loop edges) in its own thread; drift correction `T_map_odom`
 - [ ] Loop events logged and visualized (markers)
 
 **Verify**
@@ -252,7 +259,7 @@ running on your own camera.
 ## M8 — Voxel map & change detection
 
 **Build**
-- [ ] Hashed voxel grid, clamped log-odds, DDA ray-casting from depth
+- [ ] OctoMap (ROS-packaged) occupancy with clamped log-odds, fed with keyframe depth
 - [ ] Hysteresis state machine → appeared / disappeared events
 - [ ] 2D occupancy grid projection (height band) for Nav2
 - [ ] Rebuild from stored keyframe clouds after large loop corrections
@@ -260,7 +267,7 @@ running on your own camera.
 
 **Verify**
 - [ ] Synthetic: inserted then removed box → appeared then disappeared events; grid matches voxels
-- [ ] Ray-casting matches a brute-force reference
+- [ ] OctoMap clamping lets a voxel flip back within N observations (configurable)
 - [ ] Integration ≤ 15 ms per keyframe on x86
 
 **Data**: **D13**, **D15** (objects moved while the camera watches).

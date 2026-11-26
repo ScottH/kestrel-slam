@@ -24,7 +24,7 @@ option(KESTREL_WARNINGS_AS_ERRORS "Treat compiler warnings as errors (CI)" OFF)
 # ------------------------------------------------------------------------------------------------
 find_package(ament_cmake QUIET)
 find_package(Eigen3 3.3 REQUIRED NO_MODULE)
-find_package(OpenCV 4 REQUIRED COMPONENTS core imgproc features2d video calib3d)
+find_package(OpenCV 4 REQUIRED COMPONENTS core imgproc imgcodecs videoio features2d video calib3d)
 find_package(GTSAM 4.2 REQUIRED)  # poses, IMU preintegration, factor graphs, iSAM2
 find_package(yaml-cpp REQUIRED)
 if(TARGET yaml-cpp::yaml-cpp)
@@ -43,6 +43,8 @@ configure_file(include/kestrel/version.hpp.in
 add_library(kestrel_core
   src/logging.cpp
   src/config.cpp
+  src/euroc.cpp
+  src/feature_tracker.cpp
   src/imu.cpp
   src/stereo_rig.cpp
 )
@@ -68,6 +70,8 @@ set_target_properties(kestrel_core PROPERTIES POSITION_INDEPENDENT_CODE ON)
 # ------------------------------------------------------------------------------------------------
 add_executable(kestrel_info apps/kestrel_info.cpp)
 target_link_libraries(kestrel_info PRIVATE kestrel_core)
+add_executable(run_frontend apps/run_frontend.cpp)
+target_link_libraries(run_frontend PRIVATE kestrel_core)
 
 # ------------------------------------------------------------------------------------------------
 # Tests
@@ -78,6 +82,8 @@ if(KESTREL_BUILD_TESTS)
   include(GoogleTest)
   set(KESTREL_TESTS
     test_config
+    test_euroc
+    test_feature_tracker
     test_gtsam_smoke
     test_imu
     test_stereo_rig
@@ -98,7 +104,7 @@ install(DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/generated/ DESTINATION include)
 install(DIRECTORY config DESTINATION share/${PROJECT_NAME})
 install(TARGETS kestrel_core EXPORT kestrel_coreTargets
   ARCHIVE DESTINATION lib LIBRARY DESTINATION lib RUNTIME DESTINATION bin)
-install(TARGETS kestrel_info RUNTIME DESTINATION lib/${PROJECT_NAME})
+install(TARGETS kestrel_info run_frontend RUNTIME DESTINATION lib/${PROJECT_NAME})
 
 if(ament_cmake_FOUND)
   ament_export_targets(kestrel_coreTargets HAS_LIBRARY_TARGET)

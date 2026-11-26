@@ -16,6 +16,11 @@ concurrency:
 
 jobs:
   build-and-test:
+    # PRs from branches of this repo are already tested by their push event; only run the
+    # pull_request event for PRs coming from forks, so each commit is tested once.
+    if: >-
+      github.event_name != 'pull_request' ||
+      github.event.pull_request.head.repo.full_name != github.repository
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
@@ -36,10 +41,10 @@ jobs:
       # The checkout is only read; all build output goes to Docker volumes, so the container
       # user's uid does not need to match the runner's.
       - name: Build and test
-        run: docker compose run --rm --no-build test
+        run: docker compose run --rm -T test
 
       - name: Format check
         run: |
-          docker compose run --rm --no-build shell bash -c \
+          docker compose run --rm -T shell bash -c \
             "cd /ws/src/kestrel_slam && find kestrel_core kestrel_ros \( -name '*.cpp' -o -name '*.hpp' \) \
              | xargs clang-format --dry-run --Werror"

@@ -1,10 +1,19 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // run_vio — runs the visual-inertial odometry on an ASL-format dataset (EuRoC, TUM-VI) and
-// writes trajectories for evaluation.
+// writes trajectories for evaluation; optionally visualizes everything in Foxglove.
 //
-//   run_vio <dataset_root> <config.yaml> <output_dir> [--start-frame S] [--max-frames N]
-//           [--video tracks.mp4]
+//   run_vio <dataset_root> <config.yaml> <output_dir> [options]
+//
+// Options:
+//   --start-frame S     skip the first S frames (e.g. an incomplete download)
+//   --max-frames N      process at most N frames
+//   --video FILE.mp4    write the front-end debug video
+//   --foxglove          serve live visualization on ws://0.0.0.0:8765 (Foxglove → Open connection)
+//   --port P            WebSocket port for --foxglove (default 8765)
+//   --mcap FILE.mcap    record the visualization to an MCAP file (open it in Foxglove)
+//   --rate R            pace processing at R× real time (e.g. 1.0 to watch live); default: as fast
+//                       as possible
 //
 // Writes, in TUM format ("t x y z qx qy qz qw", world ← body):
 //   <output_dir>/estimate.tum      every processed frame (IMU-predicted between keyframes)
@@ -20,15 +29,20 @@
 #include <fstream>
 #include <iomanip>
 #include <iostream>
+#include <memory>
 #include <numeric>
 #include <opencv2/videoio.hpp>
 #include <string>
+#include <thread>
 #include <vector>
 
 #include "kestrel/common/logging.hpp"
 #include "kestrel/config.hpp"
 #include "kestrel/io/euroc.hpp"
 #include "kestrel/odometry.hpp"
+#ifdef KESTREL_WITH_FOXGLOVE
+#include "kestrel/viz/foxglove_visualizer.hpp"
+#endif
 
 namespace {
 
@@ -46,10 +60,22 @@ double percentile(std::vector<double> v, double p) {
   return v[static_cast<std::size_t>(p * (v.size() - 1))];
 }
 
+/// Ground-truth pose nearest in time (ground truth is ≥ 100 Hz, so nearest is good enough for
+/// display; evaluation uses evo's proper association).
+const kestrel::GroundTruthPose* nearestGroundTruth(const std::vector<kestrel::GroundTruthPose>& gt,
+                                                   double t) {
+  if (gt.empty()) return nullptr;
+  auto it = std::lower_bound(gt.begin(), gt.end(), t,
+                             [](const kestrel::GroundTruthPose& g, double v) { return g.t < v; });
+  if (it == gt.end()) it = std::prev(it);
+  if (it != gt.begin() && std::abs(std::prev(it)->t - t) < std::abs(it->t - t)) it = std::prev(it);
+  return std::abs(it->t - t) < 0.05 ? &*it : nullptr;
+}
+
 int usage() {
   std::cerr << "usage: run_vio <dataset_root> <config.yaml> <output_dir> [--start-frame S] "
-               "[--max-frames N] "
-               "[--video tracks.mp4]\n";
+               "[--max-frames N] [--video FILE.mp4] [--foxglove] [--port P] [--mcap FILE.mcap] "
+               "[--rate R]\n";
   return 2;
 }
 
@@ -58,7 +84,10 @@ int usage() {
 int main(int argc, char** argv) {
   if (argc < 4) return usage();
   std::size_t max_frames = 0, start_frame = 0;
-  std::string video_path;
+  std::string video_path, mcap_path;
+  bool foxglove_live = false;
+  int port = 8765;
+  double rate = 0.0;
   for (int i = 4; i < argc; ++i) {
     const std::string a = argv[i];
     if (a == "--start-frame" && i + 1 < argc) {
@@ -67,6 +96,14 @@ int main(int argc, char** argv) {
       max_frames = std::stoul(argv[++i]);
     } else if (a == "--video" && i + 1 < argc) {
       video_path = argv[++i];
+    } else if (a == "--foxglove") {
+      foxglove_live = true;
+    } else if (a == "--port" && i + 1 < argc) {
+      port = std::stoi(argv[++i]);
+    } else if (a == "--mcap" && i + 1 < argc) {
+      mcap_path = argv[++i];
+    } else if (a == "--rate" && i + 1 < argc) {
+      rate = std::stod(argv[++i]);
     } else {
       return usage();
     }
@@ -79,12 +116,38 @@ int main(int argc, char** argv) {
     std::filesystem::create_directories(out_dir);
     std::ofstream(out_dir / "config.yaml") << kestrel::toYaml(config);
     std::ofstream est(out_dir / "estimate.tum"), kfs(out_dir / "keyframes.tum");
-    if (!dataset.groundTruth().empty()) {
+    const auto& ground_truth = dataset.groundTruth();
+    if (!ground_truth.empty()) {
       std::ofstream gt(out_dir / "groundtruth.tum");
-      for (const auto& g : dataset.groundTruth()) writeTum(gt, g.t, g.T_world_body);
+      for (const auto& g : ground_truth) writeTum(gt, g.t, g.T_world_body);
     }
 
     kestrel::VisualInertialOdometry vio(config);
+
+    // --- optional Foxglove visualization -----------------------------------------------------
+#ifdef KESTREL_WITH_FOXGLOVE
+    std::unique_ptr<kestrel::FoxgloveVisualizer> viz;
+    double viz_time = 0.0;  // sensor time of the frame being processed (for log messages)
+    if (foxglove_live || !mcap_path.empty()) {
+      kestrel::FoxgloveOptions fo;
+      fo.websocket = foxglove_live;
+      fo.port = static_cast<uint16_t>(port);
+      fo.mcap_path = mcap_path;
+      viz = std::make_unique<kestrel::FoxgloveVisualizer>(fo, vio.rig());
+      // Mirror log messages into Foxglove's Log panel (and keep printing them).
+      kestrel::setLogSink([&viz, &viz_time](kestrel::LogLevel level, const char*, int,
+                                            const std::string& msg) {
+        std::cerr << "[kestrel] [" << kestrel::toString(level) << "] " << msg << '\n';
+        if (viz) viz->logMessage(viz_time, level, msg);
+      });
+    }
+#else
+    if (foxglove_live || !mcap_path.empty()) {
+      KLOG_ERROR("built without the Foxglove SDK: --foxglove/--mcap unavailable");
+      return 1;
+    }
+#endif
+
     const auto& images = dataset.images();
     const auto& imu = dataset.imu();
     // Frames [start_frame, end): e.g. to skip a damaged or incomplete beginning of a sequence.
@@ -97,17 +160,53 @@ int main(int argc, char** argv) {
     std::vector<double> frame_ms, solve_ms;
     int keyframes = 0, resets = 0, outliers = 0;
     std::size_t next_imu = 0;
+    // Ground truth lives in its own world frame; for display it is aligned to the estimate's
+    // world frame with the first estimated pose (evaluation does a proper SE(3) fit instead).
+    std::optional<gtsam::Pose3> T_est_gt;
+    const auto wall_start = std::chrono::steady_clock::now();
+    const double t_first = start_frame < images.size() ? images[start_frame].t : 0.0;
+
     for (std::size_t i = start_frame; i < end; ++i) {
       const double t = images[i].t;
+      if (rate > 0.0) {  // pace to `rate` × real time
+        const auto due = wall_start + std::chrono::duration<double>((t - t_first) / rate);
+        std::this_thread::sleep_until(due);
+      }
       // Deliver IMU up to (and a little past) the frame, as a live driver would.
       while (next_imu < imu.size() && imu[next_imu].t <= t + 0.02) vio.addImu(imu[next_imu++]);
       const auto [left, right] = dataset.loadStereo(i);
+#ifdef KESTREL_WITH_FOXGLOVE
+      viz_time = t;
+#endif
 
       const auto t0 = std::chrono::steady_clock::now();
       const auto out = vio.addStereo(t, left, right);
-      frame_ms.push_back(
-          std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count());
-      if (!out || !out->initialized) continue;
+      const double ms =
+          std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count();
+      frame_ms.push_back(ms);
+      if (!out) continue;
+
+#ifdef KESTREL_WITH_FOXGLOVE
+      if (viz) {
+        kestrel::FrameExtras extras;
+        extras.frame_ms = ms;
+        const auto* gt = nearestGroundTruth(ground_truth, t);
+        if (gt && out->initialized) {
+          if (!T_est_gt) {
+            T_est_gt = out->state.pose() * gt->T_world_body.inverse();
+            std::vector<gtsam::Pose3> path;
+            for (std::size_t k = 0; k < ground_truth.size(); k += 10) {
+              path.push_back(*T_est_gt * ground_truth[k].T_world_body);
+            }
+            viz->logGroundTruthPath(t, path);
+          }
+          extras.ground_truth = *T_est_gt * gt->T_world_body;
+        }
+        viz->logFrame(t, left, vio.lastFrame(), *out, extras);
+        if (out->is_keyframe) viz->logLandmarks(t, vio.estimator().landmarksInWindow());
+      }
+#endif
+      if (!out->initialized) continue;
 
       writeTum(est, t, out->state.pose());
       if (out->is_keyframe) {
@@ -127,18 +226,23 @@ int main(int argc, char** argv) {
       }
       if (i % 200 == 0) {
         const auto& p = out->state.position();
-        KLOG_INFO("frame " << i << "/" << n << "  t=" << std::fixed << std::setprecision(2) << t
+        KLOG_INFO("frame " << i << "/" << end << "  t=" << std::fixed << std::setprecision(2) << t
                            << "  p=(" << p.x() << ", " << p.y() << ", " << p.z() << ")  landmarks "
                            << out->landmarks_in_window);
       }
     }
+    (void)T_est_gt;
     std::printf("frames %zu, keyframes %d, resets %d, outliers reported %d\n", n, keyframes, resets,
                 outliers);
     std::printf("time / frame [ms]     median %.1f  p95 %.1f\n", percentile(frame_ms, 0.5),
                 percentile(frame_ms, 0.95));
     std::printf("solve / keyframe [ms] median %.1f  p95 %.1f\n", percentile(solve_ms, 0.5),
                 percentile(solve_ms, 0.95));
+#ifdef KESTREL_WITH_FOXGLOVE
+    kestrel::setLogSink({});  // the visualizer is about to be destroyed
+#endif
   } catch (const std::exception& e) {
+    kestrel::setLogSink({});
     KLOG_ERROR(e.what());
     return 1;
   }

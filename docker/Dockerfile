@@ -28,7 +28,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
     rm -f /etc/apt/apt.conf.d/docker-clean && apt-get update && apt-get install -y --no-install-recommends \
-      build-essential cmake ninja-build ccache git curl ca-certificates \
+      build-essential cmake ninja-build ccache git curl ca-certificates unzip \
       libeigen3-dev libopencv-dev libyaml-cpp-dev libgtest-dev \
       python3-colcon-common-extensions python3-pip python3-numpy python3-yaml \
       ros-${ROS_DISTRO}-cv-bridge \
@@ -43,6 +43,23 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
       ros-${ROS_DISTRO}-rosbag2-compression-zstd \
       ros-${ROS_DISTRO}-rmw-cyclonedds-cpp \
       ros-${ROS_DISTRO}-gtsam
+
+# Foxglove SDK (MIT): live WebSocket + MCAP visualization of the SLAM internals. The release
+# ships a prebuilt C library plus C++ wrapper sources compiled with our toolchain. Pinned by
+# version and SHA-256 for both architectures.
+ARG FOXGLOVE_SDK_VERSION=0.30.3
+ARG FOXGLOVE_SDK_SHA256_X86_64=1b0b9b732be961692847d3965709bab24ab4d6b882b6b7e1f34d7719d26498ee
+ARG FOXGLOVE_SDK_SHA256_AARCH64=5bc64161de36c688c31deeab132785a34347e5d2fb42bc791b1ad54c553ddd39
+ARG TARGETARCH
+RUN if [ "${TARGETARCH}" = "arm64" ]; then arch=aarch64; sha=${FOXGLOVE_SDK_SHA256_AARCH64}; \
+    else arch=x86_64; sha=${FOXGLOVE_SDK_SHA256_X86_64}; fi \
+ && curl -fsSL -o /tmp/foxglove-sdk.zip \
+      "https://github.com/foxglove/foxglove-sdk/releases/download/sdk%2Fv${FOXGLOVE_SDK_VERSION}/foxglove-v${FOXGLOVE_SDK_VERSION}-cpp-${arch}-unknown-linux-gnu.zip" \
+ && echo "${sha}  /tmp/foxglove-sdk.zip" | sha256sum -c - \
+ && unzip -q /tmp/foxglove-sdk.zip -d /tmp/foxglove-sdk \
+ && mv /tmp/foxglove-sdk/foxglove /opt/foxglove-sdk \
+ && rm -rf /tmp/foxglove-sdk /tmp/foxglove-sdk.zip
+ENV CMAKE_PREFIX_PATH=/opt/foxglove-sdk
 
 # ================================================================================================
 FROM base AS orbbec

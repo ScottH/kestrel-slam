@@ -1,0 +1,120 @@
+{
+  "configById": {
+    "3D!kestrel": {
+      "cameraState": {
+        "distance": 10,
+        "perspective": true,
+        "phi": 55,
+        "thetaOffset": 45,
+        "targetOffset": [0, 0, 0],
+        "target": [0, 0, 0],
+        "targetOrientation": [0, 0, 0, 1],
+        "fovy": 45,
+        "near": 0.1,
+        "far": 5000
+      },
+      "followMode": "follow-pose",
+      "followTf": "body",
+      "scene": {},
+      "transforms": {},
+      "topics": {
+        "/vio/path": { "visible": true },
+        "/groundtruth/path": { "visible": true },
+        "/vio/landmarks": { "visible": true, "pointSize": 3, "colorField": "z" },
+        "/vio/camera": { "visible": true },
+        "/vio/pose": { "visible": true }
+      },
+      "layers": {
+        "grid": { "visible": true, "layerId": "foxglove.Grid", "frameId": "world", "size": 20, "divisions": 20 }
+      }
+    },
+    "Image!kestrel": {
+      "imageMode": {
+        "imageTopic": "/camera/left/image",
+        "annotations": { "/camera/left/features": { "visible": true } }
+      }
+    },
+    "Plot!features": {
+      "title": "Front end",
+      "paths": [
+        { "value": "/vio/stats.features", "enabled": true },
+        { "value": "/vio/stats.stereo_matched", "enabled": true },
+        { "value": "/vio/stats.detected", "enabled": true },
+        { "value": "/vio/stats.lost_fb", "enabled": true },
+        { "value": "/vio/stats.lost_ransac", "enabled": true },
+        { "value": "/vio/stats.lost_klt", "enabled": true }
+      ]
+    },
+    "Plot!estimator": {
+      "title": "Estimator",
+      "paths": [
+        { "value": "/vio/stats.landmarks_in_window", "enabled": true },
+        { "value": "/vio/stats.new_landmarks", "enabled": true },
+        { "value": "/vio/stats.outliers", "enabled": true }
+      ]
+    },
+    "Plot!timing": {
+      "title": "Timing [ms]",
+      "paths": [
+        { "value": "/vio/stats.frame_ms", "enabled": true },
+        { "value": "/vio/stats.frontend_ms", "enabled": true },
+        { "value": "/vio/stats.solve_ms", "enabled": true }
+      ]
+    },
+    "Plot!error": {
+      "title": "Error vs. ground truth [m] / speed [m/s]",
+      "paths": [
+        { "value": "/vio/stats.error_m", "enabled": true },
+        { "value": "/vio/stats.speed_mps", "enabled": true }
+      ]
+    },
+    "Plot!bias": {
+      "title": "IMU bias",
+      "paths": [
+        { "value": "/vio/stats.bias_gyr.x", "enabled": true },
+        { "value": "/vio/stats.bias_gyr.y", "enabled": true },
+        { "value": "/vio/stats.bias_gyr.z", "enabled": true },
+        { "value": "/vio/stats.bias_acc.x", "enabled": false },
+        { "value": "/vio/stats.bias_acc.y", "enabled": false },
+        { "value": "/vio/stats.bias_acc.z", "enabled": false }
+      ]
+    },
+    "RosOut!log": { "topicToRender": "/log" }
+  },
+  "globalVariables": {},
+  "userNodes": {},
+  "playbackConfig": { "speed": 1 },
+  "layout": {
+    "direction": "row",
+    "splitPercentage": 50,
+    "first": {
+      "direction": "column",
+      "splitPercentage": 70,
+      "first": "3D!kestrel",
+      "second": "RosOut!log"
+    },
+    "second": {
+      "direction": "column",
+      "splitPercentage": 45,
+      "first": "Image!kestrel",
+      "second": {
+        "direction": "column",
+        "first": {
+          "direction": "row",
+          "first": "Plot!features",
+          "second": "Plot!estimator"
+        },
+        "second": {
+          "direction": "row",
+          "first": {
+            "direction": "row",
+            "first": "Plot!timing",
+            "second": "Plot!error"
+          },
+          "second": "Plot!bias",
+          "splitPercentage": 66
+        }
+      }
+    }
+  }
+}

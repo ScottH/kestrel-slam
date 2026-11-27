@@ -3,6 +3,7 @@
 # Kestrel SLAM — everything runs in containers; the host only needs Docker.
 #
 #   docker compose build                    # build the dev image (first time: ~10-15 min)
+#                                           #   DNS errors while building? use docker/scripts/build-image.sh
 #   docker compose run --rm build           # colcon build the workspace
 #   docker compose run --rm test            # build + run all unit tests
 #   docker compose run --rm shell           # interactive shell with everything installed

@@ -98,6 +98,10 @@ class VioEstimator {
   const gtsam::imuBias::ConstantBias& bias() const { return kf_bias_; }
   double keyframeTime() const { return kf_time_; }
 
+  /// Current estimates of all landmarks in the window, as (track id, world position). Computes
+  /// the full smoother estimate, so call it at keyframes and only when needed (visualization).
+  std::vector<std::pair<int, gtsam::Point3>> landmarksInWindow() const;
+
   /// Drops everything; the next process() call initializes again.
   void reset();
 

@@ -14,10 +14,14 @@
 //   --mcap FILE.mcap    record the visualization to an MCAP file (open it in Foxglove)
 //   --rate R            pace processing at R× real time (e.g. 1.0 to watch live); default: as fast
 //                       as possible
+//   --async             run loop closure in its own thread as on the robot (default: inline, so
+//                       results are reproducible)
 //
 // Writes, in TUM format ("t x y z qx qy qz qw", world ← body):
 //   <output_dir>/estimate.tum      every processed frame (IMU-predicted between keyframes)
 //   <output_dir>/keyframes.tum     keyframes only (smoothed estimates)
+//   <output_dir>/estimate_map.tum  every frame in the loop-corrected map frame (online)
+//   <output_dir>/keyframes_map.tum final pose-graph keyframe poses (after all loop closures)
 //   <output_dir>/groundtruth.tum   the dataset's ground truth, if it has one
 //   <output_dir>/config.yaml       the exact configuration used
 // Score with:  tools/evaluate.py <output_dir>
@@ -29,6 +33,8 @@
 #include <fstream>
 #include <iomanip>
 #include <iostream>
+#include <map>
+#include <optional>
 #include <memory>
 #include <numeric>
 #include <opencv2/videoio.hpp>
@@ -39,7 +45,7 @@
 #include "kestrel/common/logging.hpp"
 #include "kestrel/config.hpp"
 #include "kestrel/io/euroc.hpp"
-#include "kestrel/odometry.hpp"
+#include "kestrel/slam_system.hpp"
 #ifdef KESTREL_WITH_FOXGLOVE
 #include "kestrel/viz/foxglove_visualizer.hpp"
 #endif
@@ -85,7 +91,7 @@ int main(int argc, char** argv) {
   if (argc < 4) return usage();
   std::size_t max_frames = 0, start_frame = 0;
   std::string video_path, mcap_path;
-  bool foxglove_live = false;
+  bool foxglove_live = false, async_loops = false;
   int port = 8765;
   double rate = 0.0;
   for (int i = 4; i < argc; ++i) {
@@ -102,6 +108,8 @@ int main(int argc, char** argv) {
       port = std::stoi(argv[++i]);
     } else if (a == "--mcap" && i + 1 < argc) {
       mcap_path = argv[++i];
+    } else if (a == "--async") {
+      async_loops = true;
     } else if (a == "--rate" && i + 1 < argc) {
       rate = std::stod(argv[++i]);
     } else {
@@ -110,19 +118,22 @@ int main(int argc, char** argv) {
   }
 
   try {
-    const kestrel::Config config = kestrel::loadConfig(argv[2]);
+    kestrel::Config config = kestrel::loadConfig(argv[2]);
+    config.loop_closure.synchronous = !async_loops;
     const kestrel::EurocDataset dataset(argv[1]);
     const std::filesystem::path out_dir(argv[3]);
     std::filesystem::create_directories(out_dir);
     std::ofstream(out_dir / "config.yaml") << kestrel::toYaml(config);
-    std::ofstream est(out_dir / "estimate.tum"), kfs(out_dir / "keyframes.tum");
+    std::ofstream est(out_dir / "estimate.tum"), kfs(out_dir / "keyframes.tum"),
+        est_map(out_dir / "estimate_map.tum");
     const auto& ground_truth = dataset.groundTruth();
     if (!ground_truth.empty()) {
       std::ofstream gt(out_dir / "groundtruth.tum");
       for (const auto& g : ground_truth) writeTum(gt, g.t, g.T_world_body);
     }
 
-    kestrel::VisualInertialOdometry vio(config);
+    kestrel::SlamSystem slam(config);
+    kestrel::VisualInertialOdometry& vio = slam.odometry();
 
     // --- optional Foxglove visualization -----------------------------------------------------
 #ifdef KESTREL_WITH_FOXGLOVE
@@ -182,7 +193,9 @@ int main(int argc, char** argv) {
 #endif
 
       const auto t0 = std::chrono::steady_clock::now();
-      const auto out = vio.addStereo(t, left, right);
+      const auto slam_out = slam.addStereo(t, left, right);
+      const std::optional<kestrel::VioEstimator::Output> out =
+          slam_out ? std::optional<kestrel::VioEstimator::Output>(slam_out->odometry) : std::nullopt;
       const double ms =
           std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count();
       frame_ms.push_back(ms);
@@ -206,11 +219,28 @@ int main(int argc, char** argv) {
         }
         viz->logFrame(t, left, vio.lastFrame(), *out, extras);
         if (out->is_keyframe) viz->logLandmarks(t, vio.estimator().landmarksInWindow());
+        if (out->is_keyframe && slam.loopCloser()) {
+          const auto* lc = slam.loopCloser();
+          std::vector<gtsam::Pose3> path;
+          std::map<int, gtsam::Point3> position;
+          for (const auto& [id, kt, pose] : lc->keyframePoses()) {
+            path.push_back(pose);
+            position[id] = pose.translation();
+          }
+          std::vector<std::pair<gtsam::Point3, gtsam::Point3>> edges;
+          for (const auto& loop : lc->loops()) {
+            if (position.count(loop.query_id) && position.count(loop.match_id)) {
+              edges.emplace_back(position[loop.match_id], position[loop.query_id]);
+            }
+          }
+          viz->logLoopClosure(t, slam_out->T_map_odom, path, edges);
+        }
       }
 #endif
       if (!out->initialized) continue;
 
       writeTum(est, t, out->state.pose());
+      writeTum(est_map, t, slam_out->T_map_body);
       if (out->is_keyframe) {
         writeTum(kfs, t, out->state.pose());
         ++keyframes;
@@ -234,6 +264,26 @@ int main(int argc, char** argv) {
       }
     }
     (void)T_est_gt;
+    // Let loop closure finish, then write the final optimized keyframe trajectory.
+    slam.finish();
+    int loops = 0;
+    if (const auto* lc = slam.loopCloser()) {
+      std::ofstream kfm(out_dir / "keyframes_map.tum");
+      for (const auto& [id, kt, pose] : lc->keyframePoses()) writeTum(kfm, kt, pose);
+      loops = static_cast<int>(lc->loops().size());
+      // Every verified loop, for analysis: t_query t_match x y z qx qy qz qw inliers score, where
+      // the pose is the query body in the match body frame (tools/analyze_loops.py).
+      std::ofstream lf(out_dir / "loops.txt");
+      lf << "# t_query t_match x y z qx qy qz qw inliers score\n";
+      for (const auto& l : lc->loops()) {
+        const gtsam::Quaternion q = l.T_match_query.rotation().toQuaternion();
+        const gtsam::Point3& p = l.T_match_query.translation();
+        lf << std::fixed << std::setprecision(9) << l.t_query << ' ' << l.t_match << ' '
+           << std::setprecision(6) << p.x() << ' ' << p.y() << ' ' << p.z() << ' ' << q.x() << ' '
+           << q.y() << ' ' << q.z() << ' ' << q.w() << ' ' << l.inliers << ' ' << l.score << '\n';
+      }
+    }
+    std::printf("loop closures %d\n", loops);
     std::printf("frames %zu, keyframes %d, resets %d, outliers reported %d\n", n, keyframes, resets,
                 outliers);
     std::printf("time / frame [ms]     median %.1f  p95 %.1f\n", percentile(frame_ms, 0.5),

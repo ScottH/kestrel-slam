@@ -126,6 +126,9 @@ struct FoxgloveVisualizer::Impl {
         must(fm::PointCloudChannel::create("/vio/landmarks", context), "channel landmarks"));
     camera.emplace(must(fm::SceneUpdateChannel::create("/vio/camera", context), "channel camera"));
     log.emplace(must(fm::LogChannel::create("/log", context), "channel log"));
+    slam_path.emplace(
+        must(fm::PosesInFrameChannel::create("/slam/path", context), "channel slam path"));
+    loops.emplace(must(fm::SceneUpdateChannel::create("/slam/loops", context), "channel loops"));
     const foxglove::Schema schema{"kestrel.FrameStats", "jsonschema",
                                   reinterpret_cast<const std::byte*>(kStatsSchema),
                                   std::strlen(kStatsSchema)};
@@ -151,6 +154,8 @@ struct FoxgloveVisualizer::Impl {
   std::optional<fm::PointCloudChannel> landmarks;
   std::optional<fm::SceneUpdateChannel> camera;
   std::optional<fm::LogChannel> log;
+  std::optional<fm::PosesInFrameChannel> slam_path;
+  std::optional<fm::SceneUpdateChannel> loops;
   std::optional<foxglove::RawChannel> stats;
   std::vector<fm::Pose> keyframe_path;
   bool sent_camera = false;
@@ -321,6 +326,39 @@ void FoxgloveVisualizer::logGroundTruthPath(double t, const std::vector<gtsam::P
   path.frame_id = "world";
   for (const auto& p : poses) path.poses.push_back(toPose(p));
   impl_->gt_path->log(path, toNs(t));
+}
+
+void FoxgloveVisualizer::logLoopClosure(
+    double t, const gtsam::Pose3& T_map_odom, const std::vector<gtsam::Pose3>& map_keyframe_path,
+    const std::vector<std::pair<gtsam::Point3, gtsam::Point3>>& loop_edges) {
+  std::lock_guard<std::mutex> lock(impl_->mutex);
+  auto& I = *impl_;
+  const uint64_t ns = toNs(t);
+  I.tf->log(toTf(t, "map", "world", T_map_odom), ns);
+
+  fm::PosesInFrame path;
+  path.timestamp = stamp(t);
+  path.frame_id = "map";
+  for (const auto& p : map_keyframe_path) path.poses.push_back(toPose(p));
+  I.slam_path->log(path, ns);
+
+  fm::LinePrimitive lines;
+  lines.type = fm::LinePrimitive::LineType::LINE_LIST;
+  lines.thickness = 3.0;
+  lines.scale_invariant = true;
+  lines.color = colour(1.0, 0.0, 1.0);  // magenta
+  for (const auto& [a, b] : loop_edges) {
+    lines.points.push_back(fm::Point3{a.x(), a.y(), a.z()});
+    lines.points.push_back(fm::Point3{b.x(), b.y(), b.z()});
+  }
+  fm::SceneEntity entity;
+  entity.timestamp = stamp(t);
+  entity.frame_id = "map";
+  entity.id = "loops";
+  entity.lines.push_back(std::move(lines));
+  fm::SceneUpdate update;
+  update.entities.push_back(std::move(entity));
+  I.loops->log(update, ns);
 }
 
 void FoxgloveVisualizer::logMessage(double t, LogLevel level, const std::string& message) {

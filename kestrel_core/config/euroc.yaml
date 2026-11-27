@@ -45,3 +45,7 @@ imu:
 frontend:
   max_features: 150
   min_feature_distance_px: 30
+
+loop_closure:
+  # Trained on EuRoC MH_01+MH_02 with train_vocabulary (recipe: docs/theory/08).
+  vocabulary_path: /data/vocabulary/kestrel_orb_k10L5.fbow

@@ -124,7 +124,8 @@ struct LoopClosureConfig {
   /// Normalizing by how similar the query is to its own neighbour makes one threshold work in
   /// both texture-rich and bland scenes (as in DBoW2's loop detector).
   double min_bow_score = 0.3;
-  int min_inliers = 25;              ///< PnP-RANSAC inliers to accept a loop
+  int min_inliers = 80;  ///< PnP-RANSAC inliers to accept a loop (TUM-VI room2: wrong loops
+                         ///< had 29–46 inliers, good ones a median of 262; tools/analyze_loops.py)
   double exclude_recent_s = 20.0;    ///< don't match against the immediate past [s]
   int temporal_consistency = 2;      ///< consecutive consistent detections required
   double ratio_test = 0.8;           ///< descriptor matching: best/second-best distance ratio

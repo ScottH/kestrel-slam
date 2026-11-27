@@ -23,7 +23,10 @@
 //   /vio/camera            camera frustum (3D panel)
 //   /vio/stats             per-frame numbers for Plot panels (JSON): features, losses by cause,
 //                          stereo matches, landmarks, solve time, biases, error vs. ground truth
+//   /slam/path             loop-corrected keyframe trajectory (map frame)
+//   /slam/loops            verified loop closures, drawn as lines between the two keyframes
 //   /log                   estimator messages (initialization, resets, warnings)
+// TF follows ROS REP-105: map → world (odometry frame, drift correction) → body → camera_left.
 //
 // Timestamps are the sensor times, so a recording replays with the original timing.
 
@@ -79,6 +82,12 @@ class FoxgloveVisualizer {
 
   /// Logs the full ground-truth trajectory once (already aligned to the estimate's world frame).
   void logGroundTruthPath(double t, const std::vector<gtsam::Pose3>& poses);
+
+  /// Loop closure: publishes TF map → world (the drift correction T_map_odom; "world" is the
+  /// odometry frame), the optimized keyframe path in the map frame, and loop edges as lines.
+  void logLoopClosure(double t, const gtsam::Pose3& T_map_odom,
+                      const std::vector<gtsam::Pose3>& map_keyframe_path,
+                      const std::vector<std::pair<gtsam::Point3, gtsam::Point3>>& loop_edges);
 
   /// Forwards a log message to the /log topic.
   void logMessage(double t, LogLevel level, const std::string& message);

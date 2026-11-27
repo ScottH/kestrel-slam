@@ -190,12 +190,22 @@ In a sliding window, the marginalization prior plays the role of option 2.
 
 ## 8. In Kestrel
 
-| Concept | Where (planned) |
-|---------|-----------------|
-| Ceres problem setup, LM, `DENSE_SCHUR`, time budget | `kestrel/estimator/estimator.cpp` — **planned (M3)** |
-| Robust kernels on visual factors (Cauchy) | `kestrel/estimator/factors.hpp` — **planned (M3)** |
-| Numeric-vs-autodiff Jacobian tests for every factor | `test/test_factors.cpp` — **planned (M3)** |
-| Pose-graph optimization (4-DoF) | `kestrel/loop/pose_graph.hpp` — **planned (M5)** |
+Kestrel solves its least-squares problems with **GTSAM** (library policy: DEV_PLAN §2). The
+factor-graph vocabulary of this chapter maps one-to-one onto GTSAM classes.
+
+| Concept | Where |
+|---------|-------|
+| Factor graph, values, whitened residuals | `gtsam::NonlinearFactorGraph`, `gtsam::Values`, `noiseModel::*`, used in `src/vio_estimator.cpp` (M3) |
+| Incremental Gauss–Newton with relinearization (iSAM2) | `gtsam::ISAM2` inside `IncrementalFixedLagSmoother`; parameters in `VioEstimator::makeSmoother()` (M3) |
+| Robust kernel (Huber) on visual factors | `noiseModel::Robust` + `mEstimator::Huber`, threshold `estimator.robust_kernel_k` (M3) |
+| Gauge freedom fixed with priors | priors on the first keyframe in `VioEstimator::createFirstKeyframe()` (M3) |
+| Ill-posed systems (`IndeterminantLinearSystemException`) and the weak-prior remedy | landmark creation in `VioEstimator::addVisualFactors()` (M3) |
+| Pose-graph optimization | GTSAM `BetweenFactor<Pose3>`: **planned (M5)** |
+
+> **Lesson from M3.** On real data the first failure mode was not accuracy but *well-posedness*:
+> a stereo factor whose point falls behind the camera returns zero Jacobians, so a landmark seen
+> only by such factors is unconstrained. A 5 m prior removes the singularity without measurably
+> biasing points that stereo constrains to millimetres (TUM-VI room1: 20 resets → 0).
 
 ---
 

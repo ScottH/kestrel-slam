@@ -3,7 +3,8 @@
 **Stereo-inertial SLAM for ROS 2 with loop closure and lifelong mapping in changing environments,
 built for the Orbbec Gemini 335L / 335Lg and written as teaching code.**
 
-> 🚧 **Status: M0–M1 merged; M2 (stereo front-end) in review.** The SLAM
+> 🚧 **Status: M0–M2 merged; M3 (visual-inertial odometry) in review — TUM-VI rooms 1–6 at
+> 9.1 cm mean ATE, no resets ([benchmarks](docs/benchmarks.md)).** The SLAM
 > algorithms are being built milestone
 > by milestone. Progress is tracked as a checklist in [docs/ROADMAP.md](docs/ROADMAP.md); the
 > design rationale is in [docs/DEV_PLAN.md](docs/DEV_PLAN.md). The data-capture tool already

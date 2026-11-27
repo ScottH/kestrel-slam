@@ -209,7 +209,10 @@ FeatureFrame FeatureTracker::track(double t, const cv::Mat& left_in, const cv::M
   for (const std::size_t i : order) {
     const cv::Point2f& p = survivors[i].raw;
     const cv::Point pi(static_cast<int>(std::lround(p.x)), static_cast<int>(std::lround(p.y)));
-    if (allowed.at<uint8_t>(pi) == 0) continue;  // too close to a longer track: thinned
+    if (allowed.at<uint8_t>(pi) == 0) {  // too close to a longer track (or masked): thinned
+      ++stats.thinned;
+      continue;
+    }
     next_tracks.push_back(survivors[i]);
     next_prev.push_back(survivor_prev[i]);
     cv::circle(allowed, pi, radius, cv::Scalar(0), cv::FILLED);

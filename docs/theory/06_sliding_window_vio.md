@@ -233,13 +233,22 @@ is far better than letting a diverged estimate corrupt the map.
 
 ## 9. In Kestrel
 
-| Concept | Where (planned) |
-|---------|-----------------|
-| `FeatureManager` (tracks, anchors, triangulation, re-anchoring) | `kestrel/estimator/feature_manager.hpp` — **planned (M3)** |
-| Factors: IMU, reprojection (mono/stereo, same-frame stereo) | `kestrel/estimator/factors.hpp` — **planned (M3)** |
-| `MarginalizationInfo` + prior factor | `kestrel/estimator/marginalization.hpp` — **planned (M3)** |
-| `Estimator` (window, keyframe policy, initializer, failure detection) | `kestrel/estimator/estimator.hpp` — **planned (M3)** |
-| Synthetic end-to-end test (ATE < 2 cm) | `test/test_estimator_synthetic.cpp` — **planned (M3)** |
+The window and marginalization of this chapter are **GTSAM's** `IncrementalFixedLagSmoother`.
+It marginalizes variables older than the lag inside iSAM2, which is the Schur complement
+derived above. Kestrel's `VioEstimator` contributes the policy.
+
+| Concept | Where |
+|---------|-------|
+| State per keyframe (pose, velocity, bias) and IMU factors | `X(k)`, `V(k)`, `B(k)` + `gtsam::CombinedImuFactor` in `src/vio_estimator.cpp` (M3) |
+| Landmarks as explicit 3D points with stereo / mono factors | `gtsam::GenericStereoFactor`, `GenericProjectionFactor` (M3) |
+| Marginalization (Schur complement) | `IncrementalFixedLagSmoother`, lag `estimator.smoother_lag_s` (M3) |
+| Landmark lifetime: refreshed timestamps; delayed creation after a second consistent keyframe | `VioEstimator::addVisualFactors()` (M3) |
+| Prediction gating against the IMU-predicted projection | same, `estimator.gate_reprojection_px` (M3) |
+| Keyframe policy (interval or too few tracked landmarks) | `VioEstimator::process()` (M3) |
+| Static initialization (gravity → roll/pitch; gyro bias only if really still) | `VioEstimator::initializeStatic()` (M3) |
+| Pipeline wiring (IMU buffer → tracker → estimator, outlier feedback, IMU-rate prediction) | `kestrel/odometry.hpp` (M3) |
+| Synthetic end-to-end tests (circle, static start, outliers, determinism) | `test/test_vio_estimator.cpp`, `test/sim_world.hpp` (M3) |
+| Real-data runner and scoring | `run_vio`, `tools/evaluate.py`, `tools/benchmark_tumvi.sh`; results in `docs/benchmarks.md` |
 
 ---
 

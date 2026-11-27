@@ -1,0 +1,56 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# TUM-VI benchmark (Schubert et al., IROS 2018), 512x512 "euroc"-format export: two global-shutter
+# cameras with fisheye lenses (Kannala-Brandt / equidistant), 20 Hz, hardware-synchronized with a
+# BMI160 IMU at 200 Hz. Values from the dataset's dso/camchain.yaml and dso/imu_config.yaml;
+# Kalibr's T_cam_imu were inverted to Kestrel's T_imu_cam (camera → IMU). Baseline ≈ 10.1 cm.
+
+camera:
+  model: pinhole-equidistant
+  width: 512
+  height: 512
+  rate_hz: 20
+  left:   # cam0
+    fx: 190.97847715128717
+    fy: 190.9733070521226
+    cx: 254.93170605935475
+    cy: 256.8974428996504
+    distortion: [0.0034823894022493434, 0.0007150348452162257, -0.0020532361418706202, 0.00020293673591811182]
+  right:  # cam1
+    fx: 190.44236969414825
+    fy: 190.4344384721956
+    cx: 252.59949716835982
+    cy: 254.91723064636983
+    distortion: [0.0034003170790442797, 0.001766278153469831, -0.00266312569781606, 0.0003299517423931039]
+  T_imu_left:
+    - [-0.999525037870, 0.007501918507, -0.029890130316, 0.045574835650]
+    - [0.029615343886, -0.034397360614, -0.998969345370, -0.071161801838]
+    - [-0.008522328212, -0.999380079250, 0.034158851274, -0.044681254117]
+    - [0.0, 0.0, 0.0, 1.0]
+  T_imu_right:
+    - [-0.999511048498, 0.008104079264, -0.030199136246, -0.055456339143]
+    - [0.030299116377, 0.012511643720, -0.999462566742, -0.069250021642]
+    - [-0.007721883029, -0.999888885162, -0.012751072574, -0.047452864808]
+    - [0.0, 0.0, 0.0, 1.0]
+
+imu:
+  # The dataset's "inflated" values (white noise ×2, random walk ×10 over the Allan-variance
+  # numbers), recommended by the authors for estimation.
+  accel_noise_density: 0.0028
+  accel_random_walk: 0.00086
+  gyro_noise_density: 0.00016
+  gyro_random_walk: 0.000022
+  rate_hz: 200
+
+frontend:
+  max_features: 150
+  min_feature_distance_px: 20   # 512x512 images: slightly denser spacing
+  # Tuned on room1 (2026-11-26; see docs/benchmarks.md): at 20 Hz hand-held fisheye footage the
+  # 0.5 px / 1 px defaults reject many good tracks. Relaxing them lowered ATE 7.2 → 6.3 cm.
+  # CLAHE stays on: without it stereo matches drop by ~25 % and ATE rose to 12 cm.
+  klt_fb_threshold_px: 1.0
+  ransac_threshold_px: 2.0
+  use_clahe: true
+
+estimator:
+  init_velocity_sigma: 0.5      # room sequences start hand-held, not perfectly still

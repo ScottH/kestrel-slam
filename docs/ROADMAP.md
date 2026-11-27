@@ -23,8 +23,8 @@ this file tracks *what is done* and *what is next*.
 |-----------|-------|--------|
 | M0 | Scaffolding, Docker, capture tool, theory docs | ✅ merged (PR #2) |
 | M1 | Sensor models on GTSAM + OpenCV (IMU, stereo rectification) | ✅ merged (PR #3) |
-| M2 | Stereo front-end | 🟡 in review (branch `m2`); real-data exit check pending |
-| M3 | Sliding-window VIO | ⬜ |
+| M2 | Stereo front-end | ✅ merged (PR #4); real-data exit check pending |
+| M3 | Sliding-window VIO (GTSAM fixed-lag smoother) | 🟡 in review (branch `m3`) |
 | M4 | Dynamic-object robustness | ⬜ |
 | M5 | Loop closure | ⬜ |
 | M6 | Multi-session maps & relocalization | ⬜ |
@@ -132,7 +132,7 @@ CLAHE); Kestrel's `FeatureTracker` is the policy around it.*
 - [x] Masks, dropped tracks never resurrected, EuRoC reader on a synthetic dataset
 - [ ] Runtime budget: ≤ 8 ms/frame at 848×480 on x86 (measure with `run_frontend` on real data)
 
-**Data**: EuRoC MH_01 (ETH's repository was returning HTTP 500/429 on 2026-11-26; retry);
+**Data**: TUM-VI room1 (EuRoC optional — ETH's servers are very slow);
 **D4** (`static_start`); **D5** (`loop`).
 
 **Exit**
@@ -143,30 +143,46 @@ CLAHE); Kestrel's `FeatureTracker` is the policy around it.*
 
 ## M3 — Sliding-window VIO
 
+*GTSAM provides the optimization (fixed-lag iSAM2 smoother, IMU and stereo factors, robust
+noise); Kestrel's `VioEstimator` is the policy, and `VisualInertialOdometry` the wiring.*
+
 **Build**
-- [ ] Feature/landmark manager (tracks → GTSAM stereo / smart-stereo factors)
-- [ ] GTSAM `IncrementalFixedLagSmoother` window with `CombinedImuFactor`s, robust vision noise
-- [ ] Keyframe / non-keyframe policy (what enters and leaves the smoother window)
-- [ ] Stereo-inertial initialization (gravity, PnP poses, gyro bias, first BA)
-- [ ] Keyframe selection (parallax + track count)
-- [ ] Failure detection + reset into a new sequence
-- [ ] High-rate IMU propagation for odometry output
-- [ ] `run_euroc` offline runner → TUM-format trajectory
-- [ ] `run_bag` offline runner for our MCAP recordings (no ROS graph needed)
-- [ ] `tools/evaluate.py` (evo wrapper): ATE/RPE + plots into `./results`
+- [x] GTSAM `IncrementalFixedLagSmoother` over keyframes with `CombinedImuFactor`s, explicit
+      landmarks with stereo (and mono fallback) factors, Huber robust noise
+- [x] Landmark policy: created only after a second keyframe confirms the first stereo
+      observation; refreshed timestamps keep seen landmarks in the window; weak (5 m) prior
+      against cheirality-induced indeterminate systems
+- [x] Prediction gating: observations far from the IMU-predicted projection are rejected and
+      the track is dropped in the front-end
+- [x] Keyframe selection: time interval or too few tracked landmarks
+- [x] Initialization: static start (gravity → roll/pitch, gyro bias if really still, noise-aware
+      motion check) or an explicit state
+- [x] Failure recovery: reset from the IMU prediction (same world frame)
+- [x] IMU-rate prediction (`VisualInertialOdometry::predict`)
+- [x] `run_vio` offline runner (EuRoC/TUM-VI ASL format) → TUM trajectories
+- [x] `tools/evaluate.py` (evo): SE(3)-aligned ATE, RPE per metre, plots, `metrics.json`
+- [ ] `run_bag` offline runner for our MCAP recordings (needs rosbag2; lands with M9 / first
+      recordings)
+- [ ] Performance: keyframe solve is 28 ms median on TUM-VI, ~60 ms in the denser simulation;
+      tune lag / keyframe rate / landmark count (M10)
 
 **Verify**
-- [ ] Any custom factor's Jacobian vs. numeric differentiation (GTSAM factors are trusted)
-- [ ] Fixed-lag smoother result matches a full batch solve on a short synthetic sequence
-- [ ] Synthetic end-to-end (simulated landmarks + IMU): ATE < 2 cm over 60 s
-- [ ] Deterministic: two runs on the same data give identical trajectories
+- [x] Synthetic end-to-end (`test_vio_estimator`, 20 s / 20 m circle): final error 0.5 cm
+      (0.02 % of path), yaw 0.2°, no resets
+- [x] Static start: tilt error 0.05°, drift 0.5 cm in 3 s
+- [x] 3 % gross outliers: 0 resets, final error 0.5 cm, 317 mismatches reported
+- [x] Deterministic: two runs on the same data give identical trajectories
+- [ ] Fixed-lag smoother vs. full batch solve on a short sequence (nice-to-have)
 
-**Data**: EuRoC (MH_01–05, V1_01–03, V2_01–03); **D1–D3** (calibration); **D4–D7**.
+**Data**: TUM-VI room1–6 (downloaded; ETH's EuRoC servers proved too slow — EuRoC is optional);
+**D1–D3** (calibration); **D4–D7**.
 
 **Exit**
-- [ ] All EuRoC sequences run to completion, with no resets
-- [ ] VIO-only ATE (SE(3)-aligned RMSE) within 1.5× of published VINS-Fusion stereo-inertial
-      numbers on every sequence (table in `docs/benchmarks.md`)
+- [x] TUM-VI room1 runs to completion with no resets: ATE 7.2 cm over 146 m (0.05 %),
+      RPE 1.9 cm per metre, 23 ms/frame median (see `docs/benchmarks.md`)
+- [x] TUM-VI room1–6 all complete with no resets: mean ATE 9.1 cm, RPE 1.9 cm per metre
+      (table in `docs/benchmarks.md`)
+- [ ] Compare against published VIO-only results on the same sequences (cite the papers' tables)
 - [ ] Real time: ≥ 30 Hz on x86 at 848×480 (p95 latency logged)
 - [ ] D5 (your loop): end-point drift < 1 % of path length, VIO only
 - [ ] D7 (fast motion): no divergence

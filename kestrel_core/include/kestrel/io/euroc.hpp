@@ -7,7 +7,7 @@
 //   <root>/mav0/cam0/data/<ns>.png
 //   <root>/mav0/cam1/...                 (same timestamps as cam0: hardware-synchronized)
 //   <root>/mav0/imu0/data.csv           #timestamp [ns],w_x,w_y,w_z [rad/s],a_x,a_y,a_z [m/s^2]
-//   <root>/mav0/state_groundtruth_estimate0/data.csv
+//   <root>/mav0/state_groundtruth_estimate0/data.csv   (TUM-VI: mav0/mocap0/data.csv)
 //                                        #timestamp,p_x,p_y,p_z,q_w,q_x,q_y,q_z,v...,b_w...,b_a...
 //
 // The same "ASL" layout is produced by several converters, so the reader also works for

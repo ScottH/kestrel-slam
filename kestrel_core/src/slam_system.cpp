@@ -23,7 +23,8 @@ SlamSystem::SlamSystem(const Config& config) : config_(config), odometry_(config
   }
   // The rig is shared with the odometry (same calibration and rectification).
   loop_closer_ = std::make_unique<LoopCloser>(
-      config.loop_closure, std::shared_ptr<const StereoRig>(&odometry_.rig(), [](const StereoRig*) {}),
+      config.loop_closure,
+      std::shared_ptr<const StereoRig>(&odometry_.rig(), [](const StereoRig*) {}),
       std::move(recognizer));
 }
 

@@ -116,7 +116,9 @@ fm::SpherePrimitive sphere(const gtsam::Point3& p, double size, const fm::Color&
   return s;
 }
 
-fm::Point3 pt(const gtsam::Point3& p) { return fm::Point3{p.x(), p.y(), p.z()}; }
+fm::Point3 pt(const gtsam::Point3& p) {
+  return fm::Point3{p.x(), p.y(), p.z()};
+}
 
 }  // namespace
 
@@ -388,8 +390,7 @@ void FoxgloveVisualizer::logWindowGraph(double t, const VioEstimator::WindowGrap
   entity.lines.push_back(std::move(imu));
   // Visual factors of the newest keyframe: rays from its camera to each observed landmark.
   if (!keyframes.empty()) {
-    const gtsam::Point3 cam =
-        (keyframes.back().second * I.rig.bodyToRectifiedLeft()).translation();
+    const gtsam::Point3 cam = (keyframes.back().second * I.rig.bodyToRectifiedLeft()).translation();
     std::unordered_map<int, gtsam::Point3> where(g.landmarks.begin(), g.landmarks.end());
     fm::LinePrimitive rays;
     rays.type = fm::LinePrimitive::LineType::LINE_LIST;

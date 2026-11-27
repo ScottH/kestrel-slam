@@ -58,7 +58,8 @@ TEST(FoxgloveVisualizer, WritesMcapAndServesWebSocket) {
       if (out.is_keyframe) viz.logLandmarks(t, {{1, gtsam::Point3(1, 2, 3)}, {2, gtsam::Point3()}});
     }
     VioEstimator::WindowGraph graph;
-    graph.keyframes = {{0, gtsam::Pose3()}, {1, gtsam::Pose3(gtsam::Rot3(), gtsam::Point3(1, 0, 0))}};
+    graph.keyframes = {{0, gtsam::Pose3()},
+                       {1, gtsam::Pose3(gtsam::Rot3(), gtsam::Point3(1, 0, 0))}};
     graph.landmarks = {{5, gtsam::Point3(2, 1, 3)}, {6, gtsam::Point3(2, -1, 3)}};
     graph.newest_observations = {5, 6, 7};  // 7 is not in the window: must be skipped
     graph.imu_factors = 1;

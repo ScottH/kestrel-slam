@@ -34,10 +34,10 @@
 #include <iomanip>
 #include <iostream>
 #include <map>
-#include <optional>
 #include <memory>
 #include <numeric>
 #include <opencv2/videoio.hpp>
+#include <optional>
 #include <string>
 #include <thread>
 #include <vector>
@@ -195,7 +195,8 @@ int main(int argc, char** argv) {
       const auto t0 = std::chrono::steady_clock::now();
       const auto slam_out = slam.addStereo(t, left, right);
       const std::optional<kestrel::VioEstimator::Output> out =
-          slam_out ? std::optional<kestrel::VioEstimator::Output>(slam_out->odometry) : std::nullopt;
+          slam_out ? std::optional<kestrel::VioEstimator::Output>(slam_out->odometry)
+                   : std::nullopt;
       const double ms =
           std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count();
       frame_ms.push_back(ms);
@@ -300,9 +301,10 @@ int main(int argc, char** argv) {
     std::ofstream(out_dir / "run_stats.json")
         << "{\n  \"frames\": " << n << ",\n  \"keyframes\": " << keyframes
         << ",\n  \"resets\": " << resets << ",\n  \"outliers\": " << outliers
-        << ",\n  \"loops\": " << loops << ",\n  \"loop_closure_async\": "
-        << (async_loops ? "true" : "false") << ",\n  \"frame_ms_median\": "
-        << percentile(frame_ms, 0.5) << ",\n  \"frame_ms_p95\": " << percentile(frame_ms, 0.95)
+        << ",\n  \"loops\": " << loops
+        << ",\n  \"loop_closure_async\": " << (async_loops ? "true" : "false")
+        << ",\n  \"frame_ms_median\": " << percentile(frame_ms, 0.5)
+        << ",\n  \"frame_ms_p95\": " << percentile(frame_ms, 0.95)
         << ",\n  \"solve_ms_median\": " << percentile(solve_ms, 0.5)
         << ",\n  \"solve_ms_p95\": " << percentile(solve_ms, 0.95) << "\n}\n";
 #ifdef KESTREL_WITH_FOXGLOVE

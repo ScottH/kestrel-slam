@@ -68,7 +68,8 @@ int main(int argc, char** argv) {
         total += static_cast<std::size_t>(d.rows);
         descriptors.push_back(d);
       }
-      KLOG_INFO(root << ": " << descriptors.size() << " images so far, " << total << " descriptors");
+      KLOG_INFO(root << ": " << descriptors.size() << " images so far, " << total
+                     << " descriptors");
     }
     if (descriptors.empty()) {
       KLOG_ERROR("no descriptors extracted");

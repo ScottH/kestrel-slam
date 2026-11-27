@@ -240,6 +240,11 @@ Libraries: **FBoW** (vocabulary tree, BoW transform), **OpenCV** (ORB, matching,
 >    removed every wrong loop and took room2 from 18.3 cm (odometry) to 2.0 cm ATE.
 > 3. *Sub-pixel stereo matters.* Integer ORB keypoints gave 3.5 cm / 0.6° loop-pose errors on
 >    synthetic data; sub-pixel refinement gave 2 mm / 0.04°.
+> 4. *A consistency check is only as good as the graph is stiff.* After optimization, a loop
+>    whose edge keeps a large chi² disagrees with everything else and is removed. With loose
+>    odometry edges (1 cm / 0.3° per keyframe) the graph simply bent to fit imprecise loops and
+>    nothing was ever rejected. Odometry edges that match the VIO's real short-term accuracy
+>    (2 mm / 0.06°) made those loops stand out: MH_01's online ATE went from 8.7 to 5.0 cm.
 
 ---
 

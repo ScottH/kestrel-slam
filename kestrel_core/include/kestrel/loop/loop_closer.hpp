@@ -23,8 +23,8 @@
 //      and solve PnP with RANSAC. Only many inliers with a consistent pose make a loop. This
 //      also measures the relative pose between the two keyframes.
 //   5. Optimize the pose graph (GTSAM iSAM2): keyframe poses linked by odometry edges (from the
-//      VIO) and loop edges (from step 4; Gaussian — see addLoopConstraint()). The result is the drift
-//      correction T_map_odom that is applied to every odometry pose.
+//      VIO) and loop edges (from step 4; Gaussian — see addLoopConstraint()). The result is the
+//      drift correction T_map_odom that is applied to every odometry pose.
 //
 // Runs in its own thread (live) or inline (offline, deterministic), set by
 // `loop_closure.synchronous`. Odometry never waits for it.
@@ -54,10 +54,10 @@ namespace kestrel {
 
 /// What the odometry hands over for each keyframe.
 struct KeyframeInput {
-  int id = -1;                 ///< increasing keyframe id
+  int id = -1;  ///< increasing keyframe id
   double t = 0.0;
-  gtsam::Pose3 T_odom_body;    ///< odometry estimate of the body pose
-  cv::Mat left, right;         ///< raw 8-bit images
+  gtsam::Pose3 T_odom_body;  ///< odometry estimate of the body pose
+  cv::Mat left, right;       ///< raw 8-bit images
 };
 
 /// A verified loop closure.
@@ -66,7 +66,7 @@ struct LoopEvent {
   double t_query = 0.0, t_match = 0.0;
   gtsam::Pose3 T_match_query;  ///< body pose of the query keyframe in the match's body frame
   int inliers = 0;
-  double score = 0.0;          ///< normalized BoW score
+  double score = 0.0;  ///< normalized BoW score
 };
 
 /// The geometric description of a keyframe used for verification.
@@ -99,7 +99,8 @@ class LoopCloser {
   /// Optimized keyframe poses in the map frame: (keyframe id, time, pose).
   std::vector<std::tuple<int, double, gtsam::Pose3>> keyframePoses() const;
 
-  // --- building blocks, public for tests and tools ------------------------------------------------
+  // --- building blocks, public for tests and tools
+  // ------------------------------------------------
 
   /// ORB features with stereo depth for one stereo pair.
   KeyframeFeatures describe(const cv::Mat& left, const cv::Mat& right) const;

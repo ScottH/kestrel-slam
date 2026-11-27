@@ -272,7 +272,13 @@ noise); Kestrel's `VioEstimator` is the policy, and `VisualInertialOdometry` the
 - [x] Verification recovers a known relative pose to 2 mm / 0.04° and rejects another place
 - [x] Pose graph removes injected drift on a synthetic loop (0.77 m → 0.05 m)
 - [x] Precision: 0 wrong loops on TUM-VI room2 (152 loops audited vs. ground truth)
-- [ ] Precision on all benchmark sequences (see docs/benchmarks.md)
+- [x] Post-optimization consistency check (chi²) with a stiff pose graph removes imprecise loops
+- [ ] Precision on all benchmark sequences: a few imprecise loops (0.2–0.4 m, right place) still
+      pass on room1/room4/room6/MH_01. Next ideas: weight loop edges by the PnP inlier geometry
+      (covariance from the inlier spread / depth), reject loops dominated by distant points,
+      bidirectional verification
+- [ ] Tune loop-edge sigma to the measured loop accuracy (median ~2 cm / 0.6° vs. the current
+      5 cm / 1.1°) so single loops pull harder against the stiff odometry chain; re-baseline
 - [ ] Tracking latency while the pose graph runs (live, `--async`): p95 logged
 
 **Data**: TUM-VI rooms, EuRoC MH_01/02; later **D5**, **D6** (figure-8), **D10** (perceptual

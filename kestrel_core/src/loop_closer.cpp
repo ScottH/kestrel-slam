@@ -23,7 +23,9 @@
 namespace kestrel {
 namespace {
 
-gtsam::Key K(int id) { return gtsam::Symbol('k', static_cast<std::uint64_t>(id)); }
+gtsam::Key K(int id) {
+  return gtsam::Symbol('k', static_cast<std::uint64_t>(id));
+}
 
 /// Descriptors farther apart than this (Hamming bits of 256) are never considered a match.
 constexpr int kMaxHamming = 64;
@@ -144,10 +146,11 @@ KeyframeFeatures LoopCloser::describe(const cv::Mat& left, const cv::Mat& right)
 
   // Rectified stereo: a match lies on (almost) the same row. Bucket right keypoints by row.
   std::map<int, std::vector<int>> rows;
-  for (std::size_t j = 0; j < rr.size(); ++j) rows[static_cast<int>(std::lround(rr[j].y))].push_back(static_cast<int>(j));
+  for (std::size_t j = 0; j < rr.size(); ++j)
+    rows[static_cast<int>(std::lround(rr[j].y))].push_back(static_cast<int>(j));
   const double max_disparity = rig_->focalLength() * rig_->baseline() / 0.2;
-  std::vector<int> match_left;            // left keypoint index of each stereo match
-  std::vector<cv::Point2f> match_right;   // matched right keypoint (raw pixels)
+  std::vector<int> match_left;           // left keypoint index of each stereo match
+  std::vector<cv::Point2f> match_right;  // matched right keypoint (raw pixels)
   for (std::size_t i = 0; i < out.rectified.size(); ++i) {
     const cv::Point2f& p = out.rectified[i];
     int best = -1, best_d = kMaxHamming + 1, second_d = 256;
@@ -157,8 +160,10 @@ KeyframeFeatures LoopCloser::describe(const cv::Mat& left, const cv::Mat& right)
       if (it == rows.end()) continue;
       for (const int j : it->second) {
         const double disparity = p.x - rr[j].x;
-        if (disparity <= 0.5 || disparity > max_disparity || std::abs(rr[j].y - p.y) > 2.0) continue;
-        const int d = static_cast<int>(cv::norm(dl.row(static_cast<int>(i)), dr.row(j), cv::NORM_HAMMING));
+        if (disparity <= 0.5 || disparity > max_disparity || std::abs(rr[j].y - p.y) > 2.0)
+          continue;
+        const int d =
+            static_cast<int>(cv::norm(dl.row(static_cast<int>(i)), dr.row(j), cv::NORM_HAMMING));
         if (d < best_d) {
           second_d = best_d;
           best_d = d;
@@ -187,10 +192,11 @@ KeyframeFeatures LoopCloser::describe(const cv::Mat& left, const cv::Mat& right)
     if (!status[m] || cv::norm(to[m] - match_right[m]) > 2.0) continue;
     const cv::Point2f& p = out.rectified[match_left[m]];
     if (std::abs(to_rect[m].y - p.y) > 1.0) continue;  // must stay on the epipolar row
-    const auto X = rig_->triangulate(gtsam::StereoPoint2(p.x, to_rect[m].x, 0.5 * (p.y + to_rect[m].y)));
+    const auto X =
+        rig_->triangulate(gtsam::StereoPoint2(p.x, to_rect[m].x, 0.5 * (p.y + to_rect[m].y)));
     if (!X || X->z() < 0.2 || X->z() > 20.0) continue;
-    out.points[match_left[m]] =
-        cv::Point3f(static_cast<float>(X->x()), static_cast<float>(X->y()), static_cast<float>(X->z()));
+    out.points[match_left[m]] = cv::Point3f(static_cast<float>(X->x()), static_cast<float>(X->y()),
+                                            static_cast<float>(X->z()));
     ++out.with_depth;
   }
   return out;
@@ -225,7 +231,8 @@ int LoopCloser::verify(const KeyframeFeatures& match, const KeyframeFeatures& qu
   if (static_cast<int>(object.size()) < config_.min_inliers) return 0;
 
   const auto& Kc = *rig_->calibration();
-  const cv::Mat Kmat = (cv::Mat_<double>(3, 3) << Kc.fx(), 0, Kc.px(), 0, Kc.fy(), Kc.py(), 0, 0, 1);
+  const cv::Mat Kmat =
+      (cv::Mat_<double>(3, 3) << Kc.fx(), 0, Kc.px(), 0, Kc.fy(), Kc.py(), 0, 0, 1);
   cv::Mat rvec, tvec;
   std::vector<int> inliers;
   const bool ok = cv::solvePnPRansac(object, image, Kmat, cv::noArray(), rvec, tvec, false, 200,
@@ -309,8 +316,8 @@ bool LoopCloser::addLoopConstraint(int match_id, int query_id, const gtsam::Pose
   remove.push_back(result.newFactorsIndices.at(0));
   isam_->update(gtsam::NonlinearFactorGraph(), gtsam::Values(), remove);
   optimize(5);
-  KLOG_INFO("loop " << match_id << " ↔ " << query_id << " rejected by the pose graph: chi² "
-                    << chi2 << " > " << config_.loop_max_chi2 << " after optimization");
+  KLOG_INFO("loop " << match_id << " ↔ " << query_id << " rejected by the pose graph: chi² " << chi2
+                    << " > " << config_.loop_max_chi2 << " after optimization");
   return false;
 }
 
@@ -348,9 +355,9 @@ void LoopCloser::process(KeyframeInput kf) {
 
   // 2. Propose: best non-recent keyframe, score normalized by the query's own neighbour.
   const double recent_cut = kf.t - config_.exclude_recent_s;
-  const auto candidates = recognizer_->query(
-      record.features.descriptors, 1,
-      [this, recent_cut](int id) { return records_.at(id).t > recent_cut; });
+  const auto candidates =
+      recognizer_->query(record.features.descriptors, 1,
+                         [this, recent_cut](int id) { return records_.at(id).t > recent_cut; });
   const double neighbour = recognizer_->score(kf.id, previous_id);
   if (candidates.empty() || neighbour < 0.01) {
     consistent_count_ = 0;
@@ -364,8 +371,9 @@ void LoopCloser::process(KeyframeInput kf) {
     return;
   }
   // 3. Temporal consistency: the same place (± a few keyframes) for consecutive queries.
-  consistent_count_ =
-      (last_candidate_ >= 0 && std::abs(best.id - last_candidate_) <= 5) ? consistent_count_ + 1 : 1;
+  consistent_count_ = (last_candidate_ >= 0 && std::abs(best.id - last_candidate_) <= 5)
+                          ? consistent_count_ + 1
+                          : 1;
   last_candidate_ = best.id;
   if (consistent_count_ < config_.temporal_consistency) return;
   if (!loops_.empty() && kf.id - loops_.back().query_id < kMinKeyframesBetweenLoops) return;
@@ -393,8 +401,8 @@ void LoopCloser::process(KeyframeInput kf) {
     std::lock_guard<std::mutex> lock(state_mutex_);
     loops_.push_back(event);
   }
-  KLOG_INFO("loop closed: keyframe " << kf.id << " (t=" << kf.t << ") ↔ " << best.id << " (t="
-                                     << match.t << "), " << inliers << " inliers, score "
+  KLOG_INFO("loop closed: keyframe " << kf.id << " (t=" << kf.t << ") ↔ " << best.id
+                                     << " (t=" << match.t << "), " << inliers << " inliers, score "
                                      << normalized << ", correction "
                                      << T_map_odom_.translation().norm() << " m");
   consistent_count_ = 0;

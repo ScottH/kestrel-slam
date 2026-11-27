@@ -3,7 +3,8 @@
 // run_vio — runs the visual-inertial odometry on an ASL-format dataset (EuRoC, TUM-VI) and
 // writes trajectories for evaluation.
 //
-//   run_vio <dataset_root> <config.yaml> <output_dir> [--max-frames N] [--video tracks.mp4]
+//   run_vio <dataset_root> <config.yaml> <output_dir> [--start-frame S] [--max-frames N]
+//           [--video tracks.mp4]
 //
 // Writes, in TUM format ("t x y z qx qy qz qw", world ← body):
 //   <output_dir>/estimate.tum      every processed frame (IMU-predicted between keyframes)
@@ -46,7 +47,8 @@ double percentile(std::vector<double> v, double p) {
 }
 
 int usage() {
-  std::cerr << "usage: run_vio <dataset_root> <config.yaml> <output_dir> [--max-frames N] "
+  std::cerr << "usage: run_vio <dataset_root> <config.yaml> <output_dir> [--start-frame S] "
+               "[--max-frames N] "
                "[--video tracks.mp4]\n";
   return 2;
 }
@@ -55,11 +57,13 @@ int usage() {
 
 int main(int argc, char** argv) {
   if (argc < 4) return usage();
-  std::size_t max_frames = 0;
+  std::size_t max_frames = 0, start_frame = 0;
   std::string video_path;
   for (int i = 4; i < argc; ++i) {
     const std::string a = argv[i];
-    if (a == "--max-frames" && i + 1 < argc) {
+    if (a == "--start-frame" && i + 1 < argc) {
+      start_frame = std::stoul(argv[++i]);
+    } else if (a == "--max-frames" && i + 1 < argc) {
       max_frames = std::stoul(argv[++i]);
     } else if (a == "--video" && i + 1 < argc) {
       video_path = argv[++i];
@@ -83,14 +87,17 @@ int main(int argc, char** argv) {
     kestrel::VisualInertialOdometry vio(config);
     const auto& images = dataset.images();
     const auto& imu = dataset.imu();
-    const std::size_t n = max_frames > 0 ? std::min(max_frames, images.size()) : images.size();
+    // Frames [start_frame, end): e.g. to skip a damaged or incomplete beginning of a sequence.
+    const std::size_t end = max_frames > 0 ? std::min(images.size(), start_frame + max_frames)
+                                           : images.size();
+    const std::size_t n = end > start_frame ? end - start_frame : 0;
     KLOG_INFO("run_vio: " << n << " frames, " << imu.size() << " IMU samples → " << out_dir);
 
     cv::VideoWriter video;
     std::vector<double> frame_ms, solve_ms;
     int keyframes = 0, resets = 0, outliers = 0;
     std::size_t next_imu = 0;
-    for (std::size_t i = 0; i < n; ++i) {
+    for (std::size_t i = start_frame; i < end; ++i) {
       const double t = images[i].t;
       // Deliver IMU up to (and a little past) the frame, as a live driver would.
       while (next_imu < imu.size() && imu[next_imu].t <= t + 0.02) vio.addImu(imu[next_imu++]);

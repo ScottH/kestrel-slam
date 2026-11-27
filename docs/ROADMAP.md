@@ -24,19 +24,20 @@ this file tracks *what is done* and *what is next*.
 | M0 | Scaffolding, Docker, capture tool, theory docs | ✅ merged (PR #2) |
 | M1 | Sensor models on GTSAM + OpenCV (IMU, stereo rectification) | ✅ merged (PR #3) |
 | M2 | Stereo front-end | ✅ merged (PR #4); real-data exit check pending |
-| M3 | Sliding-window VIO (GTSAM fixed-lag smoother) | 🟡 in review (branch `m3`) |
+| M3 | Sliding-window VIO (GTSAM fixed-lag smoother) | ✅ merged (PR #5) |
 | M4 | Dynamic-object robustness | ⬜ |
-| M5 | Loop closure (FBoW + PnP + iSAM2 pose graph) | 🟡 in review (branch `m5-loop-closure`) |
+| M5 | Loop closure (FBoW + PnP + iSAM2 pose graph) | ✅ merged (PR #7); precision follow-ups open |
 | M6 | Multi-session maps & relocalization | ⬜ |
 | M7 | Lifelong mapping (persistence filters) | ⬜ |
 | M8 | Voxel map & change detection | ⬜ |
 | M9 | ROS 2 node & Nav2 integration | ⬜ |
 | M10 | Benchmarking, tuning, Jetson performance | ⬜ |
 | M11 | Tutorial chapters per module | ⬜ (theory chapters done) |
+| M12 | Long-term operation in changing spaces: height-band filter, exclusion zones | ⬜ |
 | v1.0 | [Definition of "solid"](#definition-of-solid-v10-release-criteria) met | ⬜ |
 
 **Recommended order**:
-M1 → M3 (synthetic) → M2 → M3 (EuRoC) → M3 (your data) → M5 → M4 → M6 → M7 → M8 → M9 → M10.
+M1 → M3 (synthetic) → M2 → M3 (EuRoC) → M3 (your data) → M5 → M4 → M6 → M7 → M8 → M12 → M9 → M10.
 Start data collection (**D1–D4**) now, in parallel with M1. Calibration is the long pole for
 running on your own camera.
 
@@ -195,20 +196,22 @@ noise); Kestrel's `VioEstimator` is the policy, and `VisualInertialOdometry` the
 - [x] `tools/regression_report.py`: runs every sequence in `tools/benchmarks.yaml`, writes a
       summary table (mean/median/max) + `summary.json`, compares with
       `tools/regression_baseline.json`, exits 1 on regressions (`docs/benchmarks.md`)
-- [ ] Initial baseline committed for TUM-VI rooms 1–6 and EuRoC MH_01/02
-- [ ] **Quick CI regression test (target: < 5 min on a GitHub runner).** Runs the real pipeline
-      end-to-end on a short, fixed clip and fails the build if accuracy regresses:
-  - [ ] Pick the clip: ~30–40 s of a TUM-VI room that contains at least one loop closure
-        (exercises tracking, the estimator and loop closure); trim it to a small archive
-        (< 300 MB) with a script, so it is reproducible
-  - [ ] Host the clip + the vocabulary where CI can fetch them quickly (GitHub release asset or
-        Actions cache keyed by checksum); verify checksums before use
-  - [ ] Registry entry with `ci: true`; `regression_report.py --ci` runs only those entries,
-        uses CI-specific tolerances (timing excluded — runners are noisy) and its own baseline
-  - [ ] CI job in `.github/workflows/ci.yml` after the unit tests; upload `report.md` as a
-        workflow artifact so failures are easy to inspect
-  - [ ] Determinism check: two runs of the clip must give identical trajectories (inline loop
-        closure), so failures are real regressions, not noise
+- [x] Initial baseline committed for TUM-VI rooms 1–6 and EuRoC MH_01/02
+- [x] **Quick CI regression test** (60 s of the CI job, plus a 167 MB download (2 s) that is
+      cached afterwards): runs the real pipeline end-to-end on a short, fixed clip and fails the
+      build if accuracy regresses
+  - [x] Clip: first 40 s of TUM-VI room1 (initialization, tracking, ~20 loop closures), cut by
+        `tools/make_ci_clip.py` into a reproducible archive (8-bit, bit-identical to what the
+        pipeline reads; TUM-VI is CC BY 4.0, attribution in the clip README)
+  - [x] Clip + vocabulary hosted as release asset `ci-data-v1/kestrel_ci_data.tar.gz`; SHA-256
+        pinned in `ci.yml`, cached with `actions/cache` keyed by that checksum
+  - [x] `ci_sequences` / `ci_tolerances` in `tools/benchmarks.yaml`; `regression_report.py --ci`
+        with its own baseline `tools/regression_baseline_ci.json`; timing is not checked; a
+        minimum loop count catches a silently disabled loop closer
+  - [x] CI step after the unit tests; `report.md` + `summary.json` uploaded as a workflow artifact
+  - [x] Determinism check: two runs must give byte-identical trajectories and loops
+- [x] Cross-check the CI baseline against the GitHub runner's numbers (AMD EPYC runner = laptop to the mm). Re-baseline from a CI run
+      if the CPU difference is larger than the tolerance
 - [ ] Add our own Gemini 335Lg recordings to the registry as they arrive (D4–D18)
 
 ---
@@ -360,6 +363,83 @@ aliasing: repetitive corridors/aisles).
 
 ---
 
+## M12 — Long-term operation in changing spaces (people, pallets)
+
+**Scenario.** The robot localizes for weeks against a **pre-stored map** (M6) in a space with
+many moving people and with piles of objects (pallets, boxes, carts) that appear and disappear
+day to day. Localization must rest on what is permanent: walls, columns, racking structure,
+ceilings, high signage. Two features, both configurable per site and both cutting map points
+out *before* they can produce wrong matches. They sit alongside the M7 persistence filter, which
+only learns that something is gone after it has already been seen missing.
+
+Builds on: M4 (dynamic tracks), M6 (stored map, relocalization), M7 (persistence), M8 (voxel
+map and change regions). Ships after M8; feature A's front-end part can land with M4.
+
+### Feature A — Ignore moving objects and everything below a height band
+
+Default band: **keep only points ≥ 1.83 m (6 ft) above the floor**; configurable, e.g.
+`map_filter.min_height_m`. People, carts, forklifts and pallet stacks live below it.
+
+**Build**
+- [ ] Floor reference in the map frame: gravity from the VIO (z is already gravity-aligned) plus
+      the floor height, from the robot's `base_link` (M9: camera mount height) or from a floor-plane
+      fit (RANSAC on low stereo points) when running hand-held
+- [ ] Height filter on **map points**, used for the stored map, relocalization and loop
+      closure: points below the band are not stored as map landmarks, and their ORB features are
+      left out of the BoW descriptor and PnP verification
+- [ ] Separate, softer setting for **odometry** (VIO). Short-term tracking still benefits from
+      static low features, so by default these are only down-weighted, not removed. Removing
+      them all would starve a forward-looking camera mounted below 1.8 m (see the risk below)
+- [ ] **Moving objects** at any height: M4 machinery (post-solve reprojection/epipolar gating,
+      dynamic heat grid, optional person/forklift segmentation masks) also keeps flagged tracks
+      out of the map
+- [ ] Optional height-band and semantic class lists: `ignore_classes: [person, forklift, pallet]`
+- [ ] Foxglove: map points coloured kept / below band / dynamic; the band drawn as a plane
+
+**Verify**
+- [ ] Synthetic: random points with known heights → exact split at the threshold, under
+      arbitrary camera tilt (gravity from the estimator, not from the camera axis)
+- [ ] Floor-plane fit: < 2 cm height error on synthetic stereo with 30 % clutter
+- [ ] Ablation on D19: relocalization and ATE with the filter on vs. off (auto-generated table)
+
+**Risk / camera mounting.** A camera at ~1 m looking straight ahead sees few points above 1.8 m
+in a low-ceiling room. Check the keep ratio per keyframe on D19 early. If it is too low, tilt the
+camera up 10–20° or lower the band. Relocalization reports "too few permanent features" instead
+of guessing.
+
+### Feature B — Exclusion zones: ignore parts of the map with large object changes
+
+**Build**
+- [ ] Zone file per map (`zones.yaml`, stored and versioned with the map): named 2D polygons in
+      the map frame with an optional height range, e.g. `pallet_staging`, `loading_dock`.
+      Points inside a zone are never used for localization or loop closure and never enter the
+      persistent map; change detection there is reported as "expected" rather than as an anomaly
+- [ ] **Finding the zones (data-driven):** M7/M8 statistics over sessions → a per-cell
+      *change-frequency* heat map (appeared/disappeared events and pruned points per m² per
+      session). Cells above a threshold are proposed as zones; a person approves or edits them
+- [ ] Zone editing without code: draw in Foxglove (map + heat map shown) or edit the YAML; a
+      `zones` CLI `propose` / `apply` / `show`
+- [ ] ROS 2: zones loaded with the map, reloadable at runtime (service), published as markers
+- [ ] Interaction with A: zones are absolute (all heights) unless a height range is given;
+      above-band points inside a zone, e.g. ceiling over a dock, can stay usable
+
+**Verify**
+- [ ] Unit: point-in-polygon with height range, incl. concave polygons and zone edges
+- [ ] Synthetic multi-session: a region whose boxes are shuffled every session is proposed as a
+      zone after ≤ 3 sessions; static regions are never proposed
+- [ ] Relocalization in D20 with zones on vs. off: fewer wrong or rejected matches, same or
+      better success rate
+
+**Data**: **D19**, **D20** (below).
+
+**Exit (A + B together)**
+- [ ] D19/D20: relocalization success ≥ 95 % across all sessions, **zero** wrong relocalizations
+      or loops, ATE vs. a static-day session within 1.5×
+- [ ] Map points kept in zones or below the band: 0 (by construction; checked by a test)
+- [ ] Proposed zones cover ≥ 80 % of the documented pallet areas in D20 with ≤ 20 % false area
+
+---
+
 ## M9 — ROS 2 node & Nav2
 
 **Build**
@@ -454,6 +534,13 @@ large AprilTags at surveyed positions; they give point checks along the path.
 - [ ] **D14** multi-week series: the same route weekly for ≥ 4 weeks while the space naturally changes
 - [ ] **D15** `change_live`: the camera watches while someone moves objects in view
 
+### Long-term operation in changing spaces (M12)
+- [ ] **D19** `busy_floor`: the same route on ≥ 5 days with people walking through and carts
+      moving; note the camera height and tilt. Record one quiet (static) session as reference
+- [ ] **D20** `pallet_days`: a space where pallets or box piles change daily (warehouse,
+      loading area, storeroom) over ≥ 2 weeks. Photograph and sketch the pallet areas each day
+      (ground truth for the proposed zones)
+
 ### Outdoor (secondary target)
 - [ ] **D16** `outdoor`: shade → sun transition (IR saturation check), 100–300 m loop
 - [ ] **D17** `outdoor_dusk`: low light
@@ -495,6 +582,7 @@ Kestrel v1.0 is declared when **all** of these hold, with the evidence linked fr
 - [ ] **Loop closure precision**: zero false loops across all benchmark and D-series data
 - [ ] **Lifelong**: D13 and D14 targets met (pruning, relocalization ≥ 95 %, bounded map)
 - [ ] **Dynamic**: D8 and D9 targets met
+- [ ] **Changing spaces**: M12 exit targets met on D19 and D20 (height band + exclusion zones)
 - [ ] **Field**: F1–F6 passed (F7 and F8 documented)
 - [ ] **Real time**: 30 Hz on x86 and Jetson Orin
 - [ ] **Robustness**: no crash in 10 h cumulative field operation

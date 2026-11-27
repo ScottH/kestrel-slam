@@ -1,0 +1,32 @@
+{
+  "date": "2026-11-27T21:19:45",
+  "commit": "350759b",
+  "machine": {
+    "cpu": "AMD Ryzen 7 PRO 3700U w/ Radeon Vega Mobile Gfx",
+    "cores": 8,
+    "arch": "x86_64"
+  },
+  "skipped": [],
+  "sequences": {
+    "ci_tumvi_room1_40s": {
+      "name": "ci_tumvi_room1_40s",
+      "group": "CI",
+      "status": "ok",
+      "path_m": 28.432,
+      "ate_vio_m": 0.0186,
+      "ate_slam_online_m": 0.0154,
+      "ate_slam_final_m": 0.0139,
+      "rpe_vio_m": 0.0177,
+      "loops": 22,
+      "wrong_loops": 0,
+      "resets": 0,
+      "frames": 800,
+      "frame_ms_median": 17.0048,
+      "frame_ms_p95": 87.6515,
+      "solve_ms_median": 29.9765,
+      "loop_closure_async": false,
+      "differs": [],
+      "deterministic": true
+    }
+  }
+}

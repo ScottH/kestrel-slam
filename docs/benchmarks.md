@@ -41,6 +41,31 @@ docker compose run --rm shell /ws/src/kestrel_slam/tools/regression_report.py
   commit the baseline together with the change that caused it.
 * Options: `--sequences A B` (subset), `--skip-run` (re-score existing results), `--no-fail`.
 
+### Quick regression test in CI
+
+Every push runs `regression_report.py --ci` after the unit tests. It uses the first 40 s of TUM-VI
+room1 (800 stereo frames, about 20 loop closures). On a GitHub runner the step takes about 60 s, and the numbers match the laptop baseline to the millimetre.
+
+* **Data:** clip + vocabulary in one archive, the release asset
+  [`ci-data-v1`](https://github.com/ScottH/kestrel-slam/releases/tag/ci-data-v1). CI checks its
+  SHA-256 (pinned in `.github/workflows/ci.yml`) and caches it. To run it locally:
+  ```bash
+  curl -fL -o kestrel_ci_data.tar.gz \
+    https://github.com/ScottH/kestrel-slam/releases/download/ci-data-v1/kestrel_ci_data.tar.gz
+  tar -xzf kestrel_ci_data.tar.gz -C $KESTREL_DATA_DIR      # datasets/ci/... + vocabulary/
+  docker compose run --rm shell /ws/src/kestrel_slam/tools/regression_report.py --ci
+  ```
+* **Checks:** each sequence passes or fails on its own, against `tools/regression_baseline_ci.json`
+  and the `ci_tolerances` (ATE +25 % or +1 cm; no new wrong loops or resets; at least half the loop
+  closures). The clip runs **twice**, and the trajectories and loops must be byte-identical. Timing
+  is reported but not checked. The report is attached to the CI run as the `regression-report`
+  artifact.
+* **Changing the clip:** run `tools/make_ci_clip.py` (deterministic archive), publish it as a new
+  release (`ci-data-v2`), update `CI_DATA_URL` / `CI_DATA_SHA256` in `ci.yml` and
+  `ci_sequences`, then run `regression_report.py --ci --update-baseline`.
+* **An intentional change in results** (better or worse) needs `--ci --update-baseline`
+  committed in the same PR, just like the full baseline.
+
 Timing columns are machine-dependent (the report records CPU and core count). Compare timings only
 between reports from the same machine.
 

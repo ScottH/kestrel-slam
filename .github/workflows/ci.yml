@@ -22,6 +22,11 @@ jobs:
       github.event_name != 'pull_request' ||
       github.event.pull_request.head.repo.full_name != github.repository
     runs-on: ubuntu-24.04
+    env:
+      # Quick regression test data (tools/make_ci_clip.py). To change the clip: publish a new
+      # release asset, update both values, and regenerate tools/regression_baseline_ci.json.
+      CI_DATA_URL: https://github.com/ScottH/kestrel-slam/releases/download/ci-data-v1/kestrel_ci_data.tar.gz
+      CI_DATA_SHA256: 49e4442a6c188fc10157540562fd3651be9d0792f8bc08704b473a10e793aff5
     steps:
       - uses: actions/checkout@v4
 
@@ -48,3 +53,36 @@ jobs:
           docker compose run --rm -T shell bash -c \
             "cd /ws/src/kestrel_slam && find kestrel_core kestrel_ros \( -name '*.cpp' -o -name '*.hpp' \) \
              | xargs clang-format --dry-run --Werror"
+
+      # Quick regression test: the real pipeline on a 40 s TUM-VI clip, run twice (must be
+      # identical), compared with tools/regression_baseline_ci.json (docs/benchmarks.md).
+      - name: Cache regression test data
+        id: ci-data
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/kestrel_ci_data.tar.gz
+          key: kestrel-ci-data-${{ env.CI_DATA_SHA256 }}
+
+      - name: Download regression test data
+        if: steps.ci-data.outputs.cache-hit != 'true'
+        run: curl -fsSL --retry 3 -o "$RUNNER_TEMP/kestrel_ci_data.tar.gz" "$CI_DATA_URL"
+
+      - name: Quick regression test
+        run: |
+          echo "$CI_DATA_SHA256  $RUNNER_TEMP/kestrel_ci_data.tar.gz" | sha256sum -c -
+          data="$RUNNER_TEMP/kestrel_data"
+          mkdir -p "$data" && tar -xzf "$RUNNER_TEMP/kestrel_ci_data.tar.gz" -C "$data"
+          # The container user (uid 1000) writes results into the bind-mounted data folder.
+          chmod -R a+rwX "$data"
+          KESTREL_DATA_DIR="$data" docker compose run --rm -T -e KESTREL_COMMIT="${GITHUB_SHA::7}" \
+            shell /ws/src/kestrel_slam/tools/regression_report.py --ci
+
+      - name: Upload regression report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: regression-report
+          path: |
+            ${{ runner.temp }}/kestrel_data/results/regression/ci/latest.md
+            ${{ runner.temp }}/kestrel_data/results/regression/ci/reports/
+          if-no-files-found: ignore

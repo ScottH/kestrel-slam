@@ -8,6 +8,7 @@ summarizes accuracy, robustness and timing in one table.
     tools/regression_report.py --sequences tumvi_room2 euroc_MH_01_easy
     tools/regression_report.py --skip-run            # re-score existing results only
     tools/regression_report.py --update-baseline     # accept the current results as baseline
+    tools/regression_report.py --ci                  # quick CI check (short clip, run twice)
 
 Inputs:
     tools/benchmarks.yaml            sequence registry + regression tolerances
@@ -21,6 +22,11 @@ Per sequence: ATE of the odometry, of the online map-frame estimate and of the f
 RPE per metre; loop closures and how many of them ground truth says are wrong; resets; timing.
 Summary rows give mean / median / max. The exit code is 1 if any sequence regressed against the
 baseline beyond the tolerances (so CI or a pre-merge check can use it).
+
+--ci selects the `ci_sequences` / `ci_tolerances` of the registry, the baseline
+tools/regression_baseline_ci.json and the results folder <results>/ci. Each clip is run twice and
+the trajectories must be byte-identical (offline mode is deterministic), so a CI failure is a
+real change in behaviour, not noise. Missing clip data is an error in this mode, not a skip.
 """
 
 import argparse
@@ -54,6 +60,9 @@ DATA = pathlib.Path(os.environ.get('KESTREL_DATA', '/data'))
 RESULTS = pathlib.Path(os.environ.get('KESTREL_RESULTS', str(DATA / 'results' / 'regression')))
 RUN_VIO = os.environ.get('RUN_VIO', '/ws/install/kestrel_core/lib/kestrel_core/run_vio')
 BASELINE = REPO / 'tools' / 'regression_baseline.json'
+BASELINE_CI = REPO / 'tools' / 'regression_baseline_ci.json'
+# Files that must be identical between two runs of the same input (determinism check).
+DETERMINISTIC_FILES = ('estimate.tum', 'keyframes_map.tum', 'loops.txt')
 
 # Columns of the summary table: (key, header, format, lower_is_better).
 COLUMNS = [
@@ -176,6 +185,14 @@ def compare(rows, baseline, tol):
         for key, tkey in (('wrong_loops', 'wrong_loops'), ('resets', 'resets')):
             if r.get(key, 0) > b.get(key, 0) + tol[tkey]:
                 reasons.append(f"{key} {b.get(key, 0)} → {r.get(key, 0)}")
+        # Loop closure silently switched off (e.g. vocabulary missing) would only show up as a
+        # small ATE change on a short clip, so the loop count has a floor too.
+        if 'loops_min_fraction' in tol and b.get('loops'):
+            floor = int(b['loops'] * tol['loops_min_fraction'])
+            if r.get('loops', 0) < floor:
+                reasons.append(f"loops {b['loops']} → {r.get('loops', 0)} (minimum {floor})")
+        if r.get('deterministic') is False:
+            reasons.append('two runs differ: ' + ', '.join(r.get('differs', [])))
         if reasons:
             failed = True
             lines.append(f"| {r['name']} | ❌ REGRESSION | {'; '.join(reasons)} |")
@@ -195,10 +212,15 @@ def main() -> int:
     parser.add_argument('--update-baseline', action='store_true',
                         help=f'write the results as the new baseline ({BASELINE.relative_to(REPO)})')
     parser.add_argument('--no-fail', action='store_true', help='exit 0 even on regressions')
+    parser.add_argument('--ci', action='store_true',
+                        help='quick CI check: ci_sequences, CI baseline, determinism check')
     args = parser.parse_args()
 
     registry = yaml.safe_load((REPO / 'tools' / 'benchmarks.yaml').read_text())
-    sequences = registry['sequences']
+    sequences = registry['ci_sequences' if args.ci else 'sequences']
+    tolerances = registry['ci_tolerances' if args.ci else 'tolerances']
+    baseline_file = BASELINE_CI if args.ci else BASELINE
+    results = RESULTS / 'ci' if args.ci else RESULTS
     if args.sequences:
         unknown = set(args.sequences) - {s['name'] for s in sequences}
         if unknown:
@@ -211,23 +233,33 @@ def main() -> int:
     dirty = not os.environ.get('KESTREL_COMMIT') and bool(git('status', '--porcelain'))
     rows, skipped = [], []
     for seq in sequences:
-        out_dir = RESULTS / seq['name']
+        out_dir = results / seq['name']
         if not (DATA / 'datasets' / seq['dataset'] / 'mav0').is_dir():
+            if args.ci:
+                print(f"{seq['name']}: data not found under {DATA / 'datasets'}", file=sys.stderr)
+                return 2
             skipped.append(seq['name'])
             print(f"{seq['name']}: data not found, skipped", file=sys.stderr)
             continue
+        repeat_dir = results / (seq['name'] + '_repeat')
         if not args.skip_run:
             print(f"{seq['name']}: running ...", file=sys.stderr, flush=True)
-            if out_dir.exists():
-                shutil.rmtree(out_dir)
-            run_sequence(seq, out_dir)
+            for d in (out_dir, repeat_dir) if args.ci else (out_dir,):
+                if d.exists():
+                    shutil.rmtree(d)
+                run_sequence(seq, d)
         rows.append(score(seq, out_dir))
         r = rows[-1]
+        if args.ci and r['status'] == 'ok':
+            r['differs'] = [f for f in DETERMINISTIC_FILES
+                            if not (repeat_dir / f).exists()
+                            or (out_dir / f).read_bytes() != (repeat_dir / f).read_bytes()]
+            r['deterministic'] = not r['differs']
         print(f"{seq['name']}: {r['status']}  ATE VIO {r.get('ate_vio_m')}  "
               f"SLAM {r.get('ate_slam_final_m')}", file=sys.stderr, flush=True)
 
-    baseline = json.loads(BASELINE.read_text()) if BASELINE.exists() else None
-    check_lines, failed = compare(rows, baseline, registry['tolerances'])
+    baseline = json.loads(baseline_file.read_text()) if baseline_file.exists() else None
+    check_lines, failed = compare(rows, baseline, tolerances)
 
     now = datetime.datetime.now()
     meta = {'date': now.isoformat(timespec='seconds'), 'commit': commit + ('+dirty' if dirty else ''),
@@ -243,7 +275,7 @@ def main() -> int:
 
     m = meta['machine']
     report = [
-        f"# Kestrel regression report — {now:%Y-%m-%d %H:%M}",
+        f"# Kestrel {'CI ' if args.ci else ''}regression report — {now:%Y-%m-%d %H:%M}",
         '',
         f"Commit `{meta['commit']}` · {m['cpu']} ({m['cores']} cores, {m['arch']}) · "
         f"baseline: `{baseline['commit'] if baseline else 'none'}`",
@@ -263,24 +295,33 @@ def main() -> int:
         '|---|---|---|',
         *check_lines,
         '',
-        f"Tolerances: {registry['tolerances']}",
+        f"Tolerances: {tolerances}",
     ]
+    if args.ci:
+        report += ['', 'Determinism: ' + ', '.join(
+            f"{r['name']} {'identical' if r.get('deterministic') else 'DIFFERENT'}"
+            for r in rows if 'deterministic' in r)
+            + ' (two runs, ' + ', '.join(DETERMINISTIC_FILES) + ')']
     if skipped:
         report += ['', f"Skipped (data not found): {', '.join(skipped)}"]
     text = '\n'.join(report) + '\n'
 
-    out = RESULTS / 'reports' / f"{now:%Y%m%d_%H%M%S}_{commit}"
+    out = results / 'reports' / f"{now:%Y%m%d_%H%M%S}_{commit}"
     out.mkdir(parents=True, exist_ok=True)
     (out / 'report.md').write_text(text)
     summary = {**meta, 'sequences': {r['name']: r for r in rows}}
     (out / 'summary.json').write_text(json.dumps(summary, indent=2) + '\n')
-    (RESULTS / 'latest.md').write_text(text)
+    (results / 'latest.md').write_text(text)
     print(text)
     print(f'report: {out / "report.md"}', file=sys.stderr)
 
     if args.update_baseline:
-        BASELINE.write_text(json.dumps(summary, indent=2) + '\n')
-        print(f'baseline updated: {BASELINE}', file=sys.stderr)
+        if any(r['status'] != 'ok' or r.get('deterministic') is False for r in rows):
+            print('not updating the baseline: a run failed or was not deterministic',
+                  file=sys.stderr)
+            return 1
+        baseline_file.write_text(json.dumps(summary, indent=2) + '\n')
+        print(f'baseline updated: {baseline_file}', file=sys.stderr)
         return 0
     return 1 if failed and not args.no_fail else 0
 

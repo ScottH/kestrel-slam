@@ -107,12 +107,27 @@ struct EstimatorConfig {
 };
 
 /// Short-term dynamic-object handling.
+/// Theory: docs/theory/07_dynamic_objects.md. `enable: false` gives the plain M3 behaviour
+/// (per-observation gates only), which is what the ablation compares against.
 struct DynamicConfig {
   bool enable = true;
-  int grid_rows = 6;  ///< resolution of the "dynamic heat" grid
+  int grid_rows = 6;  ///< resolution of the "dynamic heat" grid (raw left image)
   int grid_cols = 8;
-  double heat_decay = 0.8;           ///< per-frame decay of the heat map
+  double heat_decay = 0.8;           ///< per-keyframe decay of the heat map
   double heat_mask_threshold = 0.5;  ///< cells above this block new features
+  /// When a landmark is flagged, also remove the factors it contributed EARLIER in the window
+  /// (in the next keyframe's update), so a mover stops pulling on the solution instead of until
+  /// it is marginalized. Also helps on clean data: TUM-VI room1 40 s, VIO ATE 1.86 → 1.41 cm.
+  /// (An immediate extra re-solve was tried and made results worse: 2.95 cm.)
+  bool remove_flagged_factors = true;
+  /// A new landmark is confirmed only by a keyframe at least this long after its first
+  /// sighting. Across one frame (33-50 ms) an object moving at walking speed still fits the
+  /// IMU prediction; after ~0.1 s it no longer does, so it never enters the graph.
+  double min_confirmation_s = 0.09;
+  /// Avalanche guard: if one solve would flag more than this fraction of a keyframe's
+  /// observations, the SOLUTION is suspect (pulled by a large mover), not the world. Nothing is
+  /// flagged then, because flagging the majority would hand the estimator to the mover.
+  double max_flag_fraction = 0.5;
 };
 
 /// Place recognition and loop closure.

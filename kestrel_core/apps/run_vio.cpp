@@ -16,6 +16,13 @@
 //                       as possible
 //   --async             run loop closure in its own thread as on the robot (default: inline, so
 //                       results are reproducible)
+//   --masks DIR         external masks (theory ch. 07 §5): DIR/<left image file name>, 8-bit,
+//                       non-zero = exclude (e.g. people from a segmentation network). Frames
+//                       without a mask file run unmasked.
+//   --inject-dynamic    paint a large moving object crossing the view into both images
+//                       (kestrel/eval/dynamic_overlay.hpp), to test dynamic-object handling
+//   --oracle-mask       with --inject-dynamic: also pass the painted pixels as the external mask
+//                       (perfect segmentation: the upper bound for the ablation)
 //
 // Writes, in TUM format ("t x y z qx qy qz qw", world ← body):
 //   <output_dir>/estimate.tum      every processed frame (IMU-predicted between keyframes)
@@ -28,6 +35,9 @@
 
 #include <algorithm>
 #include <chrono>
+#include <opencv2/imgcodecs.hpp>
+
+#include "kestrel/eval/dynamic_overlay.hpp"
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
@@ -91,7 +101,8 @@ int main(int argc, char** argv) {
   if (argc < 4) return usage();
   std::size_t max_frames = 0, start_frame = 0;
   std::string video_path, mcap_path;
-  bool foxglove_live = false, async_loops = false;
+  bool foxglove_live = false, async_loops = false, inject_dynamic = false, oracle_mask = false;
+  std::string mask_dir;
   int port = 8765;
   double rate = 0.0;
   for (int i = 4; i < argc; ++i) {
@@ -108,6 +119,12 @@ int main(int argc, char** argv) {
       port = std::stoi(argv[++i]);
     } else if (a == "--mcap" && i + 1 < argc) {
       mcap_path = argv[++i];
+    } else if (a == "--masks" && i + 1 < argc) {
+      mask_dir = argv[++i];
+    } else if (a == "--inject-dynamic") {
+      inject_dynamic = true;
+    } else if (a == "--oracle-mask") {
+      oracle_mask = true;
     } else if (a == "--async") {
       async_loops = true;
     } else if (a == "--rate" && i + 1 < argc) {
@@ -169,9 +186,18 @@ int main(int argc, char** argv) {
     const std::size_t n = end > start_frame ? end - start_frame : 0;
     KLOG_INFO("run_vio: " << n << " frames, " << imu.size() << " IMU samples → " << out_dir);
 
+    std::unique_ptr<kestrel::DynamicOverlay> overlay;
+    if (inject_dynamic) {
+      overlay = std::make_unique<kestrel::DynamicOverlay>(vio.rig(), config.camera.width,
+                                                          config.camera.height);
+      KLOG_INFO("injecting a moving object (disparity " << overlay->disparityPx() << " px)");
+    }
+
     cv::VideoWriter video;
     std::vector<double> frame_ms, solve_ms;
-    int keyframes = 0, resets = 0, outliers = 0;
+    int keyframes = 0, resets = 0, outliers = 0, removed_factors = 0;
+    int masked_frames = 0, overlay_frames = 0;
+    double blocked_sum = 0.0;
     std::size_t next_imu = 0;
     // Ground truth lives in its own world frame; for display it is aligned to the estimate's
     // world frame with the first estimated pose (evaluation does a proper SE(3) fit instead).
@@ -187,13 +213,27 @@ int main(int argc, char** argv) {
       }
       // Deliver IMU up to (and a little past) the frame, as a live driver would.
       while (next_imu < imu.size() && imu[next_imu].t <= t + 0.02) vio.addImu(imu[next_imu++]);
-      const auto [left, right] = dataset.loadStereo(i);
+      auto [left, right] = dataset.loadStereo(i);
+      cv::Mat mask;
+      if (!mask_dir.empty()) {
+        const auto file = std::filesystem::path(mask_dir) /
+                          std::filesystem::path(images[i].left_path).filename();
+        if (std::filesystem::exists(file)) mask = cv::imread(file.string(), cv::IMREAD_GRAYSCALE);
+        masked_frames += !mask.empty();
+      }
+      if (overlay) {
+        const cv::Mat painted = overlay->apply(t - t_first, &left, &right);
+        overlay_frames += !painted.empty();
+        if (oracle_mask && !painted.empty()) {
+          mask = mask.empty() ? painted : (mask | painted);
+        }
+      }
 #ifdef KESTREL_WITH_FOXGLOVE
       viz_time = t;
 #endif
 
       const auto t0 = std::chrono::steady_clock::now();
-      const auto slam_out = slam.addStereo(t, left, right);
+      const auto slam_out = slam.addStereo(t, left, right, mask);
       const std::optional<kestrel::VioEstimator::Output> out =
           slam_out ? std::optional<kestrel::VioEstimator::Output>(slam_out->odometry)
                    : std::nullopt;
@@ -255,6 +295,8 @@ int main(int argc, char** argv) {
       }
       resets += out->reset;
       outliers += static_cast<int>(out->outlier_ids.size());
+      removed_factors += out->removed_factors;
+      if (const auto* heat = vio.heatGrid()) blocked_sum += heat->blockedFraction();
       if (!video_path.empty()) {
         const cv::Mat canvas = kestrel::FeatureTracker::drawDebug(left, vio.lastFrame());
         if (!video.isOpened()) {
@@ -306,7 +348,12 @@ int main(int argc, char** argv) {
         << ",\n  \"frame_ms_median\": " << percentile(frame_ms, 0.5)
         << ",\n  \"frame_ms_p95\": " << percentile(frame_ms, 0.95)
         << ",\n  \"solve_ms_median\": " << percentile(solve_ms, 0.5)
-        << ",\n  \"solve_ms_p95\": " << percentile(solve_ms, 0.95) << "\n}\n";
+        << ",\n  \"solve_ms_p95\": " << percentile(solve_ms, 0.95)
+        << ",\n  \"dynamic_enabled\": " << (config.dynamic.enable ? "true" : "false")
+        << ",\n  \"removed_factors\": " << removed_factors
+        << ",\n  \"heat_blocked_fraction_mean\": " << (n ? blocked_sum / n : 0.0)
+        << ",\n  \"masked_frames\": " << masked_frames
+        << ",\n  \"injected_frames\": " << overlay_frames << "\n}\n";
 #ifdef KESTREL_WITH_FOXGLOVE
     kestrel::setLogSink({});  // the visualizer is about to be destroyed
 #endif

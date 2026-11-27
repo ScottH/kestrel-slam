@@ -52,6 +52,8 @@ add_library(kestrel_core
   src/logging.cpp
   src/config.cpp
   src/euroc.cpp
+  src/dynamic_heat_grid.cpp
+  src/dynamic_overlay.cpp
   src/feature_tracker.cpp
   src/imu.cpp
   src/loop_closer.cpp
@@ -121,6 +123,7 @@ if(KESTREL_BUILD_TESTS)
   include(GoogleTest)
   set(KESTREL_TESTS
     test_config
+    test_dynamic
     test_euroc
     test_feature_tracker
     test_gtsam_smoke

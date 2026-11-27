@@ -11,6 +11,7 @@
 #include <gtsam/slam/ProjectionFactor.h>
 #include <gtsam/slam/StereoFactor.h>
 
+#include <algorithm>
 #include <chrono>
 
 #include "kestrel/common/logging.hpp"
@@ -64,6 +65,8 @@ void VioEstimator::reset() {
   last_observations_.clear();
   candidates_.clear();
   rejected_.clear();
+  landmark_factors_.clear();
+  pending_removals_.clear();
 }
 
 void VioEstimator::initialize(double t, const gtsam::NavState& state,
@@ -327,10 +330,7 @@ void VioEstimator::addVisualFactors(const FeatureFrame& frame, int k, const gtsa
       return std::numeric_limits<double>::infinity();  // behind the camera
     }
   };
-  auto reject = [&](int id) {
-    rejected_[id] = true;
-    out->outlier_ids.push_back(id);
-  };
+  auto reject = [&](int id) { flagLandmark(id, out); };
 
   // Forget landmark candidates whose first keyframe has left the window.
   for (auto it = candidates_.begin(); it != candidates_.end();) {
@@ -341,9 +341,9 @@ void VioEstimator::addVisualFactors(const FeatureFrame& frame, int k, const gtsa
     if (rejected_.count(f.id)) continue;
     const gtsam::Key l = L(f.id);
     if (alive.count(l) > 0) {
-      // Known landmark. Gate first: project its current estimate with the IMU-predicted pose.
-      // A large error means the track jumped (mismatch, occlusion edge, moving object): adding
-      // it would drag the solution, so the observation is dropped and the track rejected.
+      // Known landmark. Gate first: its estimate projected with the IMU-predicted pose. A large
+      // error means the track jumped (mismatch, occlusion edge, moving object): adding it would
+      // drag the solution, so the observation is dropped and the track rejected.
       if (predictedError(smoother_->calculateEstimate<gtsam::Point3>(l), f) >
           cfg.gate_reprojection_px) {
         reject(f.id);
@@ -376,7 +376,11 @@ void VioEstimator::addVisualFactors(const FeatureFrame& frame, int k, const gtsa
     const auto cand = candidates_.find(f.id);
     if (cand == candidates_.end() || cand->second.keyframe == k ||
         predictedError(cand->second.p_w, f) > cfg.gate_reprojection_px) {
-      candidates_[f.id] = Candidate{k, f.stereo(), p_w};  // (re)start the candidate
+      candidates_[f.id] = Candidate{k, frame.t, f.stereo(), p_w};  // (re)start the candidate
+      continue;
+    }
+    // Too soon to tell a slow mover from a static point: keep waiting (theory ch. 07 §3).
+    if (config_.dynamic.enable && frame.t - cand->second.t < config_.dynamic.min_confirmation_s) {
       continue;
     }
     values->insert(l, cand->second.p_w);
@@ -394,6 +398,7 @@ void VioEstimator::addVisualFactors(const FeatureFrame& frame, int k, const gtsa
     candidates_.erase(cand);
     out->visual_factors += 2;
     ++out->new_landmarks;
+    out->new_landmark_ids.push_back(f.id);
   }
 }
 
@@ -401,7 +406,20 @@ bool VioEstimator::solve(const gtsam::NonlinearFactorGraph& graph, const gtsam::
                          const gtsam::FixedLagSmoother::KeyTimestampMap& stamps, Output* out) {
   const auto t0 = std::chrono::steady_clock::now();
   try {
-    smoother_->update(graph, values, stamps);
+    // Factors of landmarks flagged since the last update leave in the same iSAM2 update that
+    // brings the new keyframe in.
+    smoother_->update(graph, values, stamps, pending_removals_);
+    out->removed_factors += static_cast<int>(pending_removals_.size());
+    pending_removals_.clear();
+    // Remember where each landmark's new factors landed (slot i of the result = factor i).
+    const auto& slots = smoother_->getISAM2Result().newFactorsIndices;
+    for (std::size_t i = 0; i < graph.size() && i < slots.size(); ++i) {
+      if (!graph[i] || graph[i]->size() != 2) continue;  // visual factors link pose + landmark
+      for (const gtsam::Key key : graph[i]->keys()) {
+        const gtsam::Symbol sym(key);
+        if (sym.chr() == 'l') landmark_factors_[static_cast<int>(sym.index())].push_back(slots[i]);
+      }
+    }
     smoother_->update();  // one extra iSAM2 iteration: noticeably better at negligible cost
   } catch (const std::exception& e) {
     KLOG_WARN("VIO: smoother update failed (" << e.what() << "); resetting");
@@ -414,14 +432,38 @@ bool VioEstimator::solve(const gtsam::NonlinearFactorGraph& graph, const gtsam::
     landmarks += gtsam::Symbol(key).chr() == 'l';
   }
   out->landmarks_in_window = landmarks;
-  // Forget rejections of landmarks that have left the window.
+  // Forget rejections and factor slots of landmarks that have left the window.
+  const auto& alive = smoother_->timestamps();
   for (auto it = rejected_.begin(); it != rejected_.end();) {
-    it = smoother_->timestamps().count(L(it->first)) ? std::next(it) : rejected_.erase(it);
+    it = alive.count(L(it->first)) ? std::next(it) : rejected_.erase(it);
+  }
+  for (auto it = landmark_factors_.begin(); it != landmark_factors_.end();) {
+    it = alive.count(L(it->first)) ? std::next(it) : landmark_factors_.erase(it);
   }
   return true;
 }
 
-void VioEstimator::collectOutliers(int /*k*/, Output* out) {
+void VioEstimator::flagLandmark(int id, Output* out) {
+  if (rejected_.count(id)) return;
+  rejected_[id] = true;
+  out->outlier_ids.push_back(id);
+  const auto it = landmark_factors_.find(id);
+  if (it == landmark_factors_.end()) return;
+  if (config_.dynamic.enable && config_.dynamic.remove_flagged_factors) {
+    // A slot is only removed if it still holds a factor of THIS landmark: the factor may have
+    // been marginalized (folded into the window prior, no longer removable) and its slot reused.
+    const auto& factors = smoother_->getFactors();
+    const gtsam::Key l = L(id);
+    for (const std::size_t slot : it->second) {
+      if (slot >= factors.size() || !factors[slot]) continue;
+      const auto& keys = factors[slot]->keys();
+      if (std::find(keys.begin(), keys.end(), l) != keys.end()) pending_removals_.push_back(slot);
+    }
+  }
+  landmark_factors_.erase(it);
+}
+
+int VioEstimator::collectOutliers(int /*k*/, Output* out) {
   // After the solve, re-project every landmark observed at this keyframe. Observations the
   // robust kernel had to down-weight heavily (error > outlier_reprojection_px) are reported to
   // the front-end, which stops tracking them, and the landmark receives no further factors.
@@ -432,10 +474,13 @@ void VioEstimator::collectOutliers(int /*k*/, Output* out) {
   const double threshold = config_.estimator.outlier_reprojection_px;
   const gtsam::StereoCamera stereo_camera(T_w_c, rig_->calibration());
   const gtsam::PinholeCamera<gtsam::Cal3_S2> mono_camera(T_w_c, *mono_calibration_);
+  std::vector<int> over;  // landmarks whose error exceeds the threshold
+  int checked = 0;
   for (const auto& obs : last_observations_) {
     const int id = obs.id;
     const gtsam::Key l = L(id);
     if (!alive.count(l)) continue;
+    ++checked;
     const gtsam::Point3 p_w = smoother_->calculateEstimate<gtsam::Point3>(l);
     double error = 0.0;
     try {
@@ -444,11 +489,18 @@ void VioEstimator::collectOutliers(int /*k*/, Output* out) {
     } catch (const std::exception&) {
       error = std::numeric_limits<double>::infinity();  // behind the camera
     }
-    if (error > threshold && !rejected_.count(id)) {
-      rejected_[id] = true;
-      out->outlier_ids.push_back(id);
-    }
+    if (error > threshold && !rejected_.count(id)) over.push_back(id);
   }
+  // Avalanche guard: when most of what we see disagrees with the solution, the solution is the
+  // problem (a large mover pulled it). Flagging the majority would leave only the mover.
+  if (config_.dynamic.enable && checked >= 10 &&
+      static_cast<double>(over.size()) > config_.dynamic.max_flag_fraction * checked) {
+    KLOG_WARN("VIO: " << over.size() << " of " << checked
+                      << " observations disagree with the solution; not flagging them");
+    return 0;
+  }
+  for (const int id : over) flagLandmark(id, out);
+  return static_cast<int>(over.size());
 }
 
 }  // namespace kestrel

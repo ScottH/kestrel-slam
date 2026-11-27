@@ -92,7 +92,7 @@ std::vector<cv::Point2f> FeatureTracker::predictWithGyro(const std::vector<cv::P
 
 FeatureFrame FeatureTracker::track(double t, const cv::Mat& left_in, const cv::Mat& right_in,
                                    const std::optional<gtsam::Rot3>& R_prev_cur,
-                                   const cv::Mat& mask) {
+                                   const cv::Mat& mask, const cv::Mat& detection_mask) {
   const auto t_start = Clock::now();
   FeatureFrame frame;
   frame.t = t;
@@ -222,6 +222,9 @@ FeatureFrame FeatureTracker::track(double t, const cv::Mat& left_in, const cv::M
   const int wanted = config_.max_features - static_cast<int>(next_tracks.size());
   if (wanted > 0) {
     std::vector<cv::Point2f> corners;
+    // Hot cells of the dynamic heat grid are closed for new corners only; the thinning above
+    // already ran, so existing tracks there survive.
+    if (!detection_mask.empty()) allowed.setTo(0, detection_mask);
     cv::goodFeaturesToTrack(left, corners, wanted, 0.01, radius, allowed);
     if (!corners.empty()) {
       cv::cornerSubPix(left, corners, cv::Size(5, 5), cv::Size(-1, -1),

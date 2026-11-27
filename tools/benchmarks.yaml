@@ -30,3 +30,21 @@ tolerances:
   ate_absolute_m: 0.005   # ... or 5 mm, whichever is larger (noise floor of small errors)
   wrong_loops: 0          # no additional wrong loops
   resets: 0               # no additional resets
+  loops_min_fraction: 0.5 # at least half the baseline's loop closures
+
+# Quick CI regression test (`regression_report.py --ci`, run by .github/workflows/ci.yml).
+# Short clips cut with tools/make_ci_clip.py and published as the release asset
+# `kestrel_ci_data.tar.gz` (see docs/benchmarks.md). Keep the whole CI run under ~5 minutes.
+ci_sequences:
+  # First 40 s of room1: initialization, tracking and ~20 loop closures (first one at ~20 s).
+  - {name: ci_tumvi_room1_40s, group: CI, dataset: ci/tumvi_room1_40s, config: kestrel_core/config/tumvi_512.yaml}
+
+# Looser than above: the baseline comes from a different CPU than the CI runner, and floating
+# point results differ slightly between machines (on ONE machine runs are bit-identical, which
+# the CI mode checks separately). Timing is never checked: runners are shared and noisy.
+ci_tolerances:
+  ate_relative: 0.25
+  ate_absolute_m: 0.01
+  wrong_loops: 0
+  resets: 0
+  loops_min_fraction: 0.5

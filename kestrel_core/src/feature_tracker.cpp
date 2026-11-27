@@ -47,7 +47,9 @@ void FeatureTracker::reset() {
   to_drop_.clear();
 }
 
-void FeatureTracker::dropTracks(const std::vector<int>& ids) { to_drop_.insert(ids.begin(), ids.end()); }
+void FeatureTracker::dropTracks(const std::vector<int>& ids) {
+  to_drop_.insert(ids.begin(), ids.end());
+}
 
 cv::Mat FeatureTracker::preprocess(const cv::Mat& image) const {
   CV_Assert(image.type() == CV_8UC1);
@@ -59,7 +61,8 @@ cv::Mat FeatureTracker::preprocess(const cv::Mat& image) const {
 
 std::vector<cv::Point2f> FeatureTracker::predictWithGyro(const std::vector<cv::Point2f>& prev_raw,
                                                          const gtsam::Rot3& R_prev_cur) const {
-  // Rotation of the rectified-left camera between frames:  R_L'prev_L'cur = R_L'B · R_BprevBcur · R_BL'.
+  // Rotation of the rectified-left camera between frames:  R_L'prev_L'cur = R_L'B · R_BprevBcur ·
+  // R_BL'.
   const gtsam::Rot3 R_BL = rig_->bodyToRectifiedLeft().rotation();
   const gtsam::Matrix3 R_cur_prev = (R_BL.inverse() * R_prev_cur * R_BL).matrix().transpose();
   const auto& K = *rig_->calibration();
@@ -187,8 +190,9 @@ FeatureFrame FeatureTracker::track(double t, const cv::Mat& left_in, const cv::M
   t_step = Clock::now();
   std::vector<std::size_t> order(survivors.size());
   std::iota(order.begin(), order.end(), 0);
-  std::stable_sort(order.begin(), order.end(),
-                   [&](std::size_t a, std::size_t b) { return survivors[a].length > survivors[b].length; });
+  std::stable_sort(order.begin(), order.end(), [&](std::size_t a, std::size_t b) {
+    return survivors[a].length > survivors[b].length;
+  });
 
   // Detection mask: 255 where new corners may go.
   cv::Mat allowed(left.size(), CV_8UC1, cv::Scalar(0));
@@ -228,7 +232,8 @@ FeatureFrame FeatureTracker::track(double t, const cv::Mat& left_in, const cv::M
   }
   stats.ms_detect = msSince(t_step);
 
-  // --- Assemble the output and rectify ------------------------------------------------------------
+  // --- Assemble the output and rectify
+  // ------------------------------------------------------------
   std::vector<cv::Point2f> raw(next_tracks.size());
   for (std::size_t i = 0; i < next_tracks.size(); ++i) raw[i] = next_tracks[i].raw;
   const auto rect = rig_->rectifyLeft(raw);
@@ -242,7 +247,8 @@ FeatureFrame FeatureTracker::track(double t, const cv::Mat& left_in, const cv::M
     f.prev_left_raw = next_prev[i];
   }
 
-  // --- 5. Stereo matching --------------------------------------------------------------------------
+  // --- 5. Stereo matching
+  // --------------------------------------------------------------------------
   t_step = Clock::now();
   matchStereo(pyramid, right, &frame.features, &stats);
   stats.ms_stereo = msSince(t_step);

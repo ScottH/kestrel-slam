@@ -67,8 +67,8 @@ int main(int argc, char** argv) {
     kestrel::FeatureTracker tracker(config.frontend, rig);
     const auto imu_params = kestrel::makeImuParams(config.imu);
 
-    const std::size_t n = max_frames > 0 ? std::min(max_frames, dataset.images().size())
-                                         : dataset.images().size();
+    const std::size_t n =
+        max_frames > 0 ? std::min(max_frames, dataset.images().size()) : dataset.images().size();
     KLOG_INFO("run_frontend: " << n << " stereo frames, " << dataset.imu().size()
                                << " IMU samples, gyro aid " << (use_gyro ? "on" : "off"));
 

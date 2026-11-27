@@ -38,6 +38,7 @@
 
 #include <memory>
 #include <opencv2/core.hpp>
+#include <opencv2/imgproc.hpp>  // cv::CLAHE
 #include <optional>
 #include <unordered_set>
 #include <vector>
@@ -49,10 +50,10 @@ namespace kestrel {
 
 /// One feature in the current frame.
 struct TrackedFeature {
-  int id = -1;            ///< persistent identity across frames (never reused)
-  int track_length = 1;   ///< number of consecutive frames observed (1 = detected this frame)
-  cv::Point2f left_raw;   ///< pixel in the raw (distorted) left image
-  cv::Point2f left_rect;  ///< pixel in the rectified left image
+  int id = -1;                ///< persistent identity across frames (never reused)
+  int track_length = 1;       ///< number of consecutive frames observed (1 = detected this frame)
+  cv::Point2f left_raw;       ///< pixel in the raw (distorted) left image
+  cv::Point2f left_rect;      ///< pixel in the rectified left image
   cv::Point2f prev_left_raw;  ///< position in the previous frame (valid if track_length > 1)
   bool has_right = false;     ///< stereo match found
   cv::Point2f right_raw;      ///< pixel in the raw right image (valid if has_right)
@@ -67,15 +68,15 @@ struct TrackedFeature {
 
 /// Per-frame bookkeeping: where features came from and where they were lost, and timings.
 struct FrontendStats {
-  int tracked = 0;           ///< features carried over from the previous frame
-  int lost_klt = 0;          ///< KLT failed or left the image
-  int lost_fb = 0;           ///< failed the forward–backward check
-  int lost_ransac = 0;       ///< rejected by fundamental-matrix RANSAC
-  int lost_mask = 0;         ///< inside the external mask
+  int tracked = 0;      ///< features carried over from the previous frame
+  int lost_klt = 0;     ///< KLT failed or left the image
+  int lost_fb = 0;      ///< failed the forward–backward check
+  int lost_ransac = 0;  ///< rejected by fundamental-matrix RANSAC
+  int lost_mask = 0;    ///< inside the external mask
   int dropped_by_backend = 0;
-  int detected = 0;          ///< new corners
+  int detected = 0;  ///< new corners
   int stereo_matched = 0;
-  int stereo_rejected = 0;   ///< KLT found a match but the row/disparity check failed
+  int stereo_rejected = 0;  ///< KLT found a match but the row/disparity check failed
   double ms_total = 0, ms_preprocess = 0, ms_track = 0, ms_detect = 0, ms_stereo = 0;
 };
 

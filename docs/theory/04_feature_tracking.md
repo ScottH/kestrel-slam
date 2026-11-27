@@ -190,12 +190,23 @@ stereo-inertial initialization is fast and has no scale ambiguity.
 
 ## 8. In Kestrel
 
-| Concept | Where (planned) |
-|---------|-----------------|
-| `StereoFeatureTracker`: CLAHE, pyramids, LK with gyro prediction, FB check, F-RANSAC, masks, stereo LK | `kestrel/frontend/feature_tracker.hpp` — **planned (M2)** |
-| Output `FeatureFrame` (id → normalized left/right coordinates) | `kestrel/frontend/feature_frame.hpp` — **planned (M2)** |
-| Parameters | `frontend:` section of the config (available now) |
-| Statistics logged per frame (tracks, new, stereo matches, ms) | **planned (M2)** acceptance: ≥ 150 features/frame on EuRoC MH_01 |
+The image processing is **OpenCV** (`goodFeaturesToTrack`, `calcOpticalFlowPyrLK`,
+`findFundamentalMat`, `createCLAHE`). Kestrel's `FeatureTracker` is the policy around it.
+
+| Concept | Where |
+|---------|-------|
+| `FeatureTracker`: CLAHE, pyramids, gyro-predicted KLT, forward–backward check, F-RANSAC on rectified coordinates, longest-first thinning, masks, stereo KLT + row check | `kestrel/frontend/feature_tracker.hpp` (M2) |
+| Output `FeatureFrame`: persistent ids, raw + rectified left/right pixels, GTSAM `StereoPoint2` | same header (M2) |
+| Per-frame statistics (losses by cause, detections, stereo matches, timings) | `FrontendStats` (M2) |
+| Parameters | `frontend:` section of the config |
+| Tests: sub-pixel accuracy, stereo disparity, gyro aid through a whip-pan, RANSAC vs. a moving patch | `kestrel_core/test/test_feature_tracker.cpp` (M2) |
+| Real-data statistics + debug video | `run_frontend <euroc_root> <config> --video out.mp4` (M2) |
+
+> **Lessons from the tests.** (1) Points on a plane are *degenerate* for the fundamental
+> matrix, and a patch that only translates can always be explained, so F-RANSAC cannot reject
+> it. A rotating patch is rejected. (2) With a wide field of view, a fast turn stretches patches
+> near the image edge by tens of percent. Translation-only KLT then fails there even with a perfect
+> gyro prediction.
 
 ---
 

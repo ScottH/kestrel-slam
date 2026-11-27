@@ -3,11 +3,11 @@
 // Tests for the EuRoC (ASL format) reader on a tiny dataset written to a temporary folder.
 
 #include <gtest/gtest.h>
+#include <unistd.h>
 
 #include <filesystem>
 #include <fstream>
 #include <opencv2/imgcodecs.hpp>
-#include <unistd.h>
 
 #include "kestrel/io/euroc.hpp"
 

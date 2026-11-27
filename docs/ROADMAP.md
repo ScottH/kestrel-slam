@@ -22,8 +22,8 @@ this file tracks *what is done* and *what is next*.
 | Milestone | Scope | Status |
 |-----------|-------|--------|
 | M0 | Scaffolding, Docker, capture tool, theory docs | ✅ merged (PR #2) |
-| M1 | Sensor models on GTSAM + OpenCV (IMU, stereo rectification) | 🟡 in review (branch `m1`) |
-| M2 | Stereo front-end | ⬜ |
+| M1 | Sensor models on GTSAM + OpenCV (IMU, stereo rectification) | ✅ merged (PR #3) |
+| M2 | Stereo front-end | 🟡 in review (branch `m2`); real-data exit check pending |
 | M3 | Sliding-window VIO | ⬜ |
 | M4 | Dynamic-object robustness | ⬜ |
 | M5 | Loop closure | ⬜ |
@@ -101,33 +101,43 @@ OpenCV provides lens models and stereo rectification. Kestrel writes only the ad
 **Data**: none (synthetic + EuRoC calibration). Ideally **D1–D3** are recorded meanwhile.
 
 **Exit**
-- [ ] All of the above green in CI
+- [x] All of the above green in CI
 
 ---
 
 ## M2 — Stereo front-end
 
+*OpenCV does the image processing (Shi–Tomasi, pyramidal KLT, fundamental-matrix RANSAC,
+CLAHE); Kestrel's `FeatureTracker` is the policy around it.*
+
 **Build**
-- [ ] Shi-Tomasi detection with grid-uniform distribution and min-distance mask
-- [ ] Pyramidal KLT tracking + forward–backward check
-- [ ] Gyro-aided prediction (rotation-compensated initial flow)
-- [ ] Fundamental-matrix RANSAC outlier rejection
-- [ ] Stereo matching left → right (KLT + epipolar gate)
-- [ ] CLAHE option; external mask input (for M4)
-- [ ] Laser-frame filter: skip laser-on frames in interleave mode
-- [ ] Debug visualization (tracks, stereo matches) written to video / Foxglove
+- [x] Shi-Tomasi detection with min-distance spacing; existing tracks thinned longest-first
+- [x] Pyramidal KLT tracking + forward–backward check
+- [x] Gyro-aided prediction (pure-rotation homography as KLT's initial guess)
+- [x] Fundamental-matrix RANSAC outlier rejection on rectified coordinates
+- [x] Stereo matching left → right (KLT + rectified row check + positive disparity)
+- [x] CLAHE option; external mask input; `dropTracks()` estimator feedback (for M4)
+- [x] Debug visualization (`drawDebug`) and `run_frontend --video` on EuRoC-format data
+- [x] EuRoC (ASL format) dataset reader (also used by M3)
+- [ ] Affine KLT for patches stretched near the wide-FOV image edge (optional; see the gyro test)
+- Moved to M9: laser-frame filter (needs the driver's per-frame metadata)
 
 **Verify**
-- [ ] Synthetic image pairs (warped textures): sub-pixel tracking accuracy
-- [ ] Stereo match epipolar residuals within threshold
-- [ ] Runtime budget: ≤ 8 ms/frame at 848×480 on x86 (log it)
+- [x] Synthetic: sub-pixel tracking accuracy (median < 0.05 px), stereo disparity and row
+      error < 0.05 px
+- [x] Gyro aid: an 11.5° whip-pan keeps ≥ 65 % of still-visible tracks (measured 71 %); without
+      the gyro, 0
+- [x] RANSAC rejects an independently rotating patch. Planar scenes / pure translation of a
+      patch are degenerate for F (documented in the test); M4's IMU gating covers them
+- [x] Masks, dropped tracks never resurrected, EuRoC reader on a synthetic dataset
+- [ ] Runtime budget: ≤ 8 ms/frame at 848×480 on x86 (measure with `run_frontend` on real data)
 
-**Data**: EuRoC MH_01; **D4** (`static_start`); **D5** (`loop`).
+**Data**: EuRoC MH_01 (ETH's repository was returning HTTP 500/429 on 2026-11-26; retry);
+**D4** (`static_start`); **D5** (`loop`).
 
 **Exit**
 - [ ] ≥ 150 tracked features/frame on EuRoC MH_01 and on D5
 - [ ] Median track length ≥ 15 frames on D5
-- [ ] Zero tracks on laser dots in an interleave recording (visual check)
 
 ---
 
@@ -283,7 +293,9 @@ OpenCV provides lens models and stereo rectification. Kestrel writes only the ad
 
 **Build**
 - [ ] Synced IR pair, IMU, optional depth and mask subscriptions
-- [ ] Laser-frame filtering from driver metadata
+- [ ] Laser-frame filtering from driver metadata (skip laser-on frames in interleave mode;
+      moved here from M2)
+- [ ] Visual check: zero tracks on laser dots in an interleave recording
 - [ ] Odometry (IMU rate), TF `map → odom → base_link`, path, landmarks, voxels, changes,
       grid, loop markers
 - [ ] Calibration from `camera_info` + TF, or YAML (switch)

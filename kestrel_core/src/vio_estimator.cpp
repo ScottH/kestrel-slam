@@ -254,6 +254,18 @@ void VioEstimator::addKeyframe(const FeatureFrame& frame,
   out->bias = kf_bias_;
 }
 
+std::vector<std::pair<int, gtsam::Point3>> VioEstimator::landmarksInWindow() const {
+  std::vector<std::pair<int, gtsam::Point3>> out;
+  if (num_keyframes_ == 0) return out;
+  const gtsam::Values estimate = smoother_->calculateEstimate();
+  for (const auto& kv : estimate) {
+    const gtsam::Symbol sym(kv.key);
+    if (sym.chr() == 'l')
+      out.emplace_back(static_cast<int>(sym.index()), kv.value.cast<gtsam::Point3>());
+  }
+  return out;
+}
+
 void VioEstimator::readKeyframeState(int k) {
   kf_state_ = gtsam::NavState(smoother_->calculateEstimate<gtsam::Pose3>(X(k)),
                               smoother_->calculateEstimate<gtsam::Vector3>(V(k)));

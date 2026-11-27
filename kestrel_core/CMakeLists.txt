@@ -83,6 +83,23 @@ target_link_libraries(kestrel_info PRIVATE kestrel_core)
 add_executable(run_frontend apps/run_frontend.cpp)
 add_executable(run_vio apps/run_vio.cpp)
 target_link_libraries(run_vio PRIVATE kestrel_core)
+
+# Optional: Foxglove visualization (live WebSocket + MCAP). Built when the Foxglove SDK is found
+# (the dev image ships it in /opt/foxglove-sdk); kestrel_core itself never depends on it.
+find_package(foxglove-sdk CONFIG QUIET HINTS $ENV{FOXGLOVE_SDK_ROOT} /opt/foxglove-sdk)
+if(foxglove-sdk_FOUND)
+  foxglove_sdk_add_cpp_library(kestrel_foxglove_sdk TYPE STATIC REMOTE_ACCESS OFF)
+  set_target_properties(kestrel_foxglove_sdk PROPERTIES POSITION_INDEPENDENT_CODE ON)
+  add_library(kestrel_viz src/foxglove_visualizer.cpp)
+  target_link_libraries(kestrel_viz PUBLIC kestrel_core PRIVATE kestrel_foxglove_sdk)
+  target_compile_options(kestrel_viz PRIVATE -Wall -Wextra)
+  set_target_properties(kestrel_viz PROPERTIES POSITION_INDEPENDENT_CODE ON)
+  target_link_libraries(run_vio PRIVATE kestrel_viz)
+  target_compile_definitions(run_vio PRIVATE KESTREL_WITH_FOXGLOVE)
+  message(STATUS "Foxglove SDK found: building kestrel_viz")
+else()
+  message(STATUS "Foxglove SDK not found: visualization disabled")
+endif()
 target_link_libraries(run_frontend PRIVATE kestrel_core)
 
 # ------------------------------------------------------------------------------------------------
@@ -107,6 +124,11 @@ if(KESTREL_BUILD_TESTS)
     gtest_discover_tests(${test_name} DISCOVERY_TIMEOUT 30
       PROPERTIES ENVIRONMENT "KESTREL_REPO_ROOT=${CMAKE_CURRENT_SOURCE_DIR}/..")
   endforeach()
+  if(TARGET kestrel_viz)
+    add_executable(test_foxglove_visualizer test/test_foxglove_visualizer.cpp)
+    target_link_libraries(test_foxglove_visualizer PRIVATE kestrel_viz GTest::gtest_main)
+    gtest_discover_tests(test_foxglove_visualizer DISCOVERY_TIMEOUT 30)
+  endif()
 endif()
 
 # ------------------------------------------------------------------------------------------------

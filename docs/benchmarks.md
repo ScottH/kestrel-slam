@@ -48,6 +48,22 @@ Notes
 * TUM-VI cameras run at 20 Hz, so 28 ms/frame is real-time with margin. The keyframe solve is
   the largest cost (median ≈ 28 ms) and is the first target for M10 performance work.
 
+### EuRoC (machine hall)
+
+Config `kestrel_core/config/euroc.yaml` (dataset calibration, default front end). Full sequences
+from frame 0; both start with the drone being picked up, which the motion-aware initialization
+detects.
+
+| Sequence | Path [m] | ATE RMSE [m] | RPE 1 m [m] | Resets | ms / frame (median / p95) |
+|---|---|---|---|---|---|
+| MH_01_easy | 80.5 | 0.065 | 0.023 | 0 | 39.1 / 94.5 |
+| MH_02_easy | 73.4 | 0.043 | 0.018 | 0 | 39.5 / 91.5 |
+
+At 752×480 the p95 frame time (~92 ms) exceeds the 50 ms budget of 20 Hz: the keyframe solve
+(median ≈ 50 ms) is the bottleneck. Performance work is scheduled (M10). Reproduce with
+`run_vio /data/datasets/euroc/MH_01_easy /ws/src/kestrel_slam/kestrel_core/config/euroc.yaml
+/data/results/euroc_MH_01_easy` and `tools/evaluate.py`.
+
 ### Tuning log (room1)
 
 | Change | ATE RMSE | Notes |

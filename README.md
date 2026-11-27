@@ -27,9 +27,15 @@ built for the Orbbec Gemini 335L / 335Lg and written as teaching code.**
 
 ```bash
 docker compose build              # build the dev image (first time ~10-15 min)
+# (if package downloads fail with DNS errors: docker/scripts/build-image.sh instead)
 docker compose run --rm test      # build everything and run the unit tests
 docker compose run --rm shell     # interactive shell with all tools
 ```
+
+### Watch it run (Foxglove)
+
+`run_vio … --foxglove` streams the SLAM internals live (open `ws://<machine>:8765` in Foxglove),
+`--mcap run.mcap` records them. See [docs/visualization.md](docs/visualization.md).
 
 ### Record data with the camera
 

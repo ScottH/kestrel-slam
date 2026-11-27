@@ -259,6 +259,7 @@ void visit(V& v, LoopClosureConfig& c) {
   v.field("odometry_sigma_trans", c.odometry_sigma_trans);
   v.field("loop_sigma_rot", c.loop_sigma_rot);
   v.field("loop_sigma_trans", c.loop_sigma_trans);
+  v.field("loop_max_chi2", c.loop_max_chi2);
 }
 
 template <class V>

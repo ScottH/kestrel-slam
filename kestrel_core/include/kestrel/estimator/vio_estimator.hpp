@@ -102,6 +102,18 @@ class VioEstimator {
   /// the full smoother estimate, so call it at keyframes and only when needed (visualization).
   std::vector<std::pair<int, gtsam::Point3>> landmarksInWindow() const;
 
+  /// Snapshot of the factor graph in the window, for visualization: keyframe poses, landmarks,
+  /// which landmarks the newest keyframe observes, and how many factors of each kind exist.
+  /// Factors are classified by the variables they connect (no type casts): IMU factors link
+  /// pose/velocity/bias of two keyframes, visual factors a pose and a landmark.
+  struct WindowGraph {
+    std::vector<std::pair<int, gtsam::Pose3>> keyframes;   ///< (keyframe index, world pose)
+    std::vector<std::pair<int, gtsam::Point3>> landmarks;  ///< (track id, world position)
+    std::vector<int> newest_observations;                  ///< landmark ids seen by the newest
+    int imu_factors = 0, visual_factors = 0, prior_factors = 0, other_factors = 0;
+  };
+  WindowGraph windowGraph() const;
+
   /// Drops everything; the next process() call initializes again.
   void reset();
 

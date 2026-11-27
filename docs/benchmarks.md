@@ -9,12 +9,40 @@ their papers' tables, with citations, never from memory.
 ```bash
 export KESTREL_DATA_DIR=~/code/kestrel_slam/data   # datasets under $KESTREL_DATA_DIR/datasets
 docker compose run --rm build
-docker compose run --rm shell /ws/src/kestrel_slam/tools/benchmark_tumvi.sh      # rooms 1-6
+docker compose run --rm shell /ws/src/kestrel_slam/tools/regression_report.py   # all registered sequences
 ```
 
 TUM-VI "euroc" exports (512×512, 16-bit) are available from
 `https://cdn2.vision.in.tum.de/tumvi/exported/euroc/512_16/dataset-room<N>_512_16.tar`
 (≈ 1.7 GB each, ~5 MB/s). Extract to `$KESTREL_DATA_DIR/datasets/tumvi/room<N>_512_16/`.
+
+## Regression testing
+
+One script produces the summary table for every registered dataset, the same way every time,
+and compares it with the accepted baseline:
+
+```bash
+export KESTREL_DATA_DIR=~/code/kestrel_slam/data
+docker compose run --rm build
+docker compose run --rm shell /ws/src/kestrel_slam/tools/regression_report.py
+```
+
+* **Registry:** `tools/benchmarks.yaml` lists the sequences (dataset folder, config, group) and
+  the regression tolerances. **To add a dataset**, add one line there. Sequences whose data is
+  missing on a machine are skipped and listed as such.
+* **Report:** each run writes `$KESTREL_DATA_DIR/results/regression/reports/<date>_<commit>/`
+  with `report.md` (summary table with mean/median/max rows plus the regression check),
+  `summary.json` (all numbers, commit, machine) and per-sequence results (trajectories,
+  `loops.txt`, plots). `results/regression/latest.md` is always the newest report.
+* **Baseline:** `tools/regression_baseline.json` (committed) holds the accepted numbers. A
+  sequence **regresses** if ATE (VIO or final SLAM) grows by more than 15 % (or 5 mm, whichever
+  is larger) or if it gains resets or wrong loops. The script then exits with code 1, so it can
+  gate merges. After an intentional change, accept the new numbers with `--update-baseline` and
+  commit the baseline together with the change that caused it.
+* Options: `--sequences A B` (subset), `--skip-run` (re-score existing results), `--no-fail`.
+
+Timing columns are machine-dependent (the report records CPU and core count). Compare timings only
+between reports from the same machine.
 
 Metrics (`tools/evaluate.py`, evo):
 

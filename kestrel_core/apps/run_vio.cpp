@@ -205,6 +205,7 @@ int main(int argc, char** argv) {
       if (viz) {
         kestrel::FrameExtras extras;
         extras.frame_ms = ms;
+        if (slam.loopCloser()) extras.loops = static_cast<int>(slam.loopCloser()->loops().size());
         const auto* gt = nearestGroundTruth(ground_truth, t);
         if (gt && out->initialized) {
           if (!T_est_gt) {
@@ -218,7 +219,12 @@ int main(int argc, char** argv) {
           extras.ground_truth = *T_est_gt * gt->T_world_body;
         }
         viz->logFrame(t, left, vio.lastFrame(), *out, extras);
-        if (out->is_keyframe) viz->logLandmarks(t, vio.estimator().landmarksInWindow());
+        if (out->is_keyframe) {
+          // One snapshot of the window serves both the landmark cloud and the factor graph.
+          const auto graph = vio.estimator().windowGraph();
+          viz->logLandmarks(t, graph.landmarks);
+          viz->logWindowGraph(t, graph);
+        }
         if (out->is_keyframe && slam.loopCloser()) {
           const auto* lc = slam.loopCloser();
           std::vector<gtsam::Pose3> path;
@@ -290,6 +296,15 @@ int main(int argc, char** argv) {
                 percentile(frame_ms, 0.95));
     std::printf("solve / keyframe [ms] median %.1f  p95 %.1f\n", percentile(solve_ms, 0.5),
                 percentile(solve_ms, 0.95));
+    // Machine-readable run statistics (tools/regression_report.py reads these).
+    std::ofstream(out_dir / "run_stats.json")
+        << "{\n  \"frames\": " << n << ",\n  \"keyframes\": " << keyframes
+        << ",\n  \"resets\": " << resets << ",\n  \"outliers\": " << outliers
+        << ",\n  \"loops\": " << loops << ",\n  \"loop_closure_async\": "
+        << (async_loops ? "true" : "false") << ",\n  \"frame_ms_median\": "
+        << percentile(frame_ms, 0.5) << ",\n  \"frame_ms_p95\": " << percentile(frame_ms, 0.95)
+        << ",\n  \"solve_ms_median\": " << percentile(solve_ms, 0.5)
+        << ",\n  \"solve_ms_p95\": " << percentile(solve_ms, 0.95) << "\n}\n";
 #ifdef KESTREL_WITH_FOXGLOVE
     kestrel::setLogSink({});  // the visualizer is about to be destroyed
 #endif

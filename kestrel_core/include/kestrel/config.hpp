@@ -131,10 +131,17 @@ struct LoopClosureConfig {
   double ratio_test = 0.8;           ///< descriptor matching: best/second-best distance ratio
   double pnp_reprojection_px = 3.0;  ///< PnP-RANSAC inlier threshold
   bool synchronous = false;          ///< process keyframes inline (offline runs: deterministic)
-  double odometry_sigma_rot = 0.005;   ///< pose-graph odometry edge noise [rad]
-  double odometry_sigma_trans = 0.01;  ///< [m]
+  /// Pose-graph odometry edge noise between consecutive keyframes (~0.1 s apart). Stiff on
+  /// purpose: VIO is mm-accurate over such short steps, and a stiff graph makes imprecise loops
+  /// stand out in the consistency check (loose 5e-3/1e-2: 0 loops rejected; these values cut
+  /// MH_01 online ATE 8.7 → 5.0 cm and room6 final 2.9 → 2.4 cm).
+  double odometry_sigma_rot = 0.001;   ///< [rad]
+  double odometry_sigma_trans = 0.002;  ///< [m]
   double loop_sigma_rot = 0.02;        ///< loop edge noise [rad] (Gaussian, see LoopCloser)
   double loop_sigma_trans = 0.05;      ///< [m]
+  /// A loop whose edge still has chi² above this after optimization is removed again
+  /// (22.5 = 99.9 % quantile of chi² with 6 degrees of freedom).
+  double loop_max_chi2 = 22.5;
 };
 
 /// Lifelong map management and the dense voxel map.

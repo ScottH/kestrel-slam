@@ -283,20 +283,35 @@ void LoopCloser::addOdometryNode(const Record& r) {
   isam_->update(graph, values);
 }
 
-void LoopCloser::addLoopConstraint(int match_id, int query_id, const gtsam::Pose3& T_match_query) {
+bool LoopCloser::addLoopConstraint(int match_id, int query_id, const gtsam::Pose3& T_match_query) {
   gtsam::NonlinearFactorGraph graph;
   // Plain Gaussian on purpose. A robust kernel (Cauchy/Huber) here would treat a GENUINE loop
   // after a long drift — residual of many sigmas — as an outlier and ignore it: exactly the loops
-  // that matter most (found by test_loop_closure: 0.77 m of drift stayed uncorrected). Protection
-  // against false loops comes from geometric verification and temporal consistency instead.
+  // that matter most (found by test_loop_closure: 0.77 m of drift stayed uncorrected). Wrong or
+  // imprecise loops are caught by verification and by the consistency check below instead.
   const auto noise = gtsam::noiseModel::Diagonal::Sigmas(
       (gtsam::Vector6() << gtsam::Vector3::Constant(config_.loop_sigma_rot),
        gtsam::Vector3::Constant(config_.loop_sigma_trans))
           .finished());
   graph.emplace_shared<gtsam::BetweenFactor<gtsam::Pose3>>(K(match_id), K(query_id), T_match_query,
                                                            noise);
-  isam_->update(graph, gtsam::Values());
+  const gtsam::ISAM2Result result = isam_->update(graph, gtsam::Values());
   optimize(5);  // a loop can move many poses: let iSAM2 relinearize a few times
+
+  // Consistency check: AFTER optimization, a correct loop agrees with the odometry and with the
+  // other loops, so little of its error is left. A loop that still disagrees strongly is wrong or
+  // imprecise (seen on TUM-VI: right place, but 0.2–0.4 m off, often from distant points) and is
+  // removed again. Checking after — not before — optimizing keeps genuine loops that correct a
+  // large drift: their pre-optimization error is large, their post-optimization error is not.
+  const double chi2 = 2.0 * graph.at(0)->error(isam_->calculateEstimate());
+  if (chi2 <= config_.loop_max_chi2) return true;
+  gtsam::FactorIndices remove;
+  remove.push_back(result.newFactorsIndices.at(0));
+  isam_->update(gtsam::NonlinearFactorGraph(), gtsam::Values(), remove);
+  optimize(5);
+  KLOG_INFO("loop " << match_id << " ↔ " << query_id << " rejected by the pose graph: chi² "
+                    << chi2 << " > " << config_.loop_max_chi2 << " after optimization");
+  return false;
 }
 
 void LoopCloser::optimize(int iterations) {
@@ -369,7 +384,10 @@ void LoopCloser::process(KeyframeInput kf) {
   const gtsam::Pose3 T_mb_qb = T_B_C * T_mc_qc * T_B_C.inverse();
 
   // 5. Pose graph.
-  addLoopConstraint(best.id, kf.id, T_mb_qb);
+  if (!addLoopConstraint(best.id, kf.id, T_mb_qb)) {
+    consistent_count_ = 0;
+    return;
+  }
   LoopEvent event{kf.id, best.id, kf.t, match.t, T_mb_qb, inliers, normalized};
   {
     std::lock_guard<std::mutex> lock(state_mutex_);

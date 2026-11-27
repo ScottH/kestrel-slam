@@ -55,7 +55,7 @@ Indoor is the primary target; outdoor (sunlight, longer depth range) is a suppor
 * Every algorithm cites its source paper, with equation references in comments where useful.
 * Configuration lives in a single YAML file read by both the ROS node and the offline tools.
 
-**Dependencies:** Eigen 3.4, OpenCV 4.6, **GTSAM 4.2** (ROS-packaged), yaml-cpp, GoogleTest, and ROS 2 **Jazzy**; later OctoMap (M8) and DBoW2 (M5, vendored at a pinned commit).
+**Dependencies:** Eigen 3.4, OpenCV 4.6, **GTSAM 4.2** (ROS-packaged), yaml-cpp, GoogleTest, and ROS 2 **Jazzy**; FBoW (M5, built from a pinned commit; chosen for speed and a permissive license — DBoW2/3 require notifying their author on redistribution) and later OctoMap (M8).
 All of these are **inside the Docker image**, never on the host. No deep-learning runtime is required. Learned components are optional plug-ins.
 
 **Library policy:** common functionality comes from established, well-tested libraries; Kestrel code is written only where there is a compelling reason (clarity, simplicity, performance or tutorial value), and that reason is stated in the file's TUTORIAL NOTE. The theory chapters still derive everything, so the libraries are not black boxes.
@@ -69,7 +69,7 @@ All of these are **inside the Docker image**, never on the host. No deep-learnin
 | Sliding-window optimization + marginalization | GTSAM `IncrementalFixedLagSmoother` (iSAM2) | window/keyframe policy |
 | Visual factors | GTSAM smart / generic stereo factors | landmark management |
 | Pose graph | GTSAM `Pose3` between-factors, robust kernels | loop-edge policy |
-| Place recognition | DBoW2 | vocabulary training recipe |
+| Place recognition | FBoW (behind a `PlaceRecognizer` interface) | inverted index, vocabulary training recipe |
 | Voxel occupancy + ray casting | OctoMap | change detection on top |
 | Persistence filter | — (no widely used library; ~50 lines) | the filter itself (tutorial value, tiny) |
 | Dynamic heat grid, lifelong map logic, ROS node | — (project-specific) | all of it |
@@ -87,7 +87,7 @@ All of these are **inside the Docker image**, never on the host. No deep-learnin
 | Marginalization | Handled by the fixed-lag smoother (Schur complement inside iSAM2); we choose what leaves the window | Removes the most error-prone hand-written part of VIO |
 | Initialization | Stereo-inertial: gravity from the accelerometer, poses from stereo PnP, gyro-bias alignment, then full BA | Stereo gives metric scale, so start-up is fast and robust |
 | Dynamic objects (short-term) | (1) Robust loss + χ² reprojection gating after each solve; (2) a decaying image-grid "dynamic heat" map that blocks new features in moving regions; (3) an optional external semantic-mask topic | Geometric by default; semantic segmentation (e.g., YOLO-seg) is a plug-in, not a dependency |
-| **Loop closure** | ORB descriptors on keyframes → **DBoW2** bag of words (vocabulary trained on our data) → temporal-consistency check → descriptor matching + **PnP-RANSAC** (OpenCV) against stereo-triangulated 3D points → **GTSAM pose graph** with robust loop edges, in a dedicated thread | Gálvez-López & Tardós (DBoW2); Qin et al. (VINS pose graph) |
+| **Loop closure** | ORB descriptors on keyframes → **FBoW** bag of words (vocabulary trained on our data; pluggable) → temporal-consistency check → descriptor matching + **PnP-RANSAC** (OpenCV) against stereo-triangulated 3D points → **GTSAM pose graph** with robust loop edges, in a dedicated thread | Gálvez-López & Tardós (DBoW2); Qin et al. (VINS pose graph) |
 | Multi-session / relocalization | Each tracking run is a *sequence*. A loaded prior map is a fixed sequence. Live sequences merge on a verified cross-sequence loop. Tracking loss starts a new sequence instead of losing the map. | Same approach as VINS-Fusion map merging and the ORB-SLAM3 Atlas |
 | Changing environment (long-term) | A **persistence filter** per map point (Rosen, Mason & Leonard, ICRA 2016): a Bayesian survival estimate from detections and misses, using depth to tell "occluded" from "gone". Low-persistence points are pruned; stale keyframes leave place recognition. | Principled removal of objects that moved or disappeared |
 | Dense map | **OctoMap** occupancy (clamped log-odds, so it can change back; built-in ray casting) fed with keyframe depth. Kestrel adds appeared/disappeared change events, the 2D `OccupancyGrid` projection for Nav2, and rebuilds after large loop corrections. | Hornung et al. (OctoMap); clamping keeps the map responsive to change |
@@ -267,7 +267,7 @@ calibration (Kalibr also runs in Docker).
 |------|------------|
 | **IR laser projector dot pattern** moves with the camera and creates fake static features | Default to laser off for tracking, and document the driver's interleaved laser on/off mode so depth (laser on) and tracking (laser off) can share one stream. The front end can drop laser-on frames. |
 | Factory camera–IMU extrinsics or time offset are imprecise | A Kalibr calibration guide; optional online extrinsic estimation as a stretch goal |
-| A BoW vocabulary must be trained (ORB-SLAM's vocabulary is GPL) | Use DBoW2's vocabulary builder with a documented training recipe (EuRoC + our recordings). Loop closure is disabled with a warning if no vocabulary is present. |
+| A BoW vocabulary must be trained (ORB-SLAM's vocabulary is GPL) | Use FBoW's vocabulary builder with a documented training recipe (EuRoC + our recordings). Loop closure is disabled with a warning if no vocabulary is present. |
 | "SOTA" claims | Report only measured numbers, side by side with published baselines on identical sequences |
 | USB/GMSL camera access from inside Docker | Compose `slam` service runs privileged with `/dev` and udev rules mounted; GMSL on Jetson needs the host's JetPack camera drivers, which the hardware doc covers |
 | GUI (RViz) from a container on a laptop | Foxglove bridge as the default (browser-based); X11/Wayland forwarding documented as an alternative |

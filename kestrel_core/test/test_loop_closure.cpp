@@ -168,8 +168,13 @@ TEST_F(LoopClosureTest, PoseGraphRemovesInjectedDrift) {
   }
   const double error_before = (odom.translation() - truth[40].translation()).norm();
 
-  // The loop: keyframe 40 is back at keyframe 0's pose (relative pose = identity).
-  closer.addLoopConstraint(0, 40, truth[0].between(truth[40]));
+  // The loop: keyframe 40 is back at keyframe 0's pose (relative pose = identity). Despite the
+  // large pre-optimization error it must be ACCEPTED (it is consistent once the drift is spread).
+  EXPECT_TRUE(closer.addLoopConstraint(0, 40, truth[0].between(truth[40])));
+  // A wrong loop (1 m off) contradicts the now-consistent graph and must be rejected.
+  const gtsam::Pose3 wrong = truth[5].between(truth[25]) *
+                             gtsam::Pose3(gtsam::Rot3::Rz(0.1), gtsam::Point3(1.0, 0, 0));
+  EXPECT_FALSE(closer.addLoopConstraint(5, 25, wrong));
   const auto poses = closer.keyframePoses();
   const gtsam::Pose3 corrected = std::get<2>(poses.back());
   const double error_after = (corrected.translation() - truth[40].translation()).norm();

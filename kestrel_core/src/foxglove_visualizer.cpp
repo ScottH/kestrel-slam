@@ -16,6 +16,7 @@
 #include <opencv2/imgcodecs.hpp>
 #include <sstream>
 #include <stdexcept>
+#include <unordered_map>
 
 namespace kestrel {
 namespace {
@@ -90,9 +91,32 @@ constexpr const char* kStatsSchema = R"({
       "y": {"type": "number"}, "z": {"type": "number"}}},
     "bias_gyr": {"type": "object", "properties": {"x": {"type": "number"},
       "y": {"type": "number"}, "z": {"type": "number"}}},
-    "error_m": {"type": "number"}
+    "error_m": {"type": "number"}, "loops": {"type": "integer"}
   }
 })";
+
+constexpr const char* kFactorStatsSchema = R"({
+  "type": "object",
+  "properties": {
+    "keyframes": {"type": "integer"}, "landmarks": {"type": "integer"},
+    "imu_factors": {"type": "integer"}, "visual_factors": {"type": "integer"},
+    "prior_factors": {"type": "integer"}, "other_factors": {"type": "integer"},
+    "total_factors": {"type": "integer"}, "newest_observations": {"type": "integer"}
+  }
+})";
+
+fm::SpherePrimitive sphere(const gtsam::Point3& p, double size, const fm::Color& c) {
+  fm::SpherePrimitive s;
+  fm::Pose pose;
+  pose.position = fm::Vector3{p.x(), p.y(), p.z()};
+  pose.orientation = fm::Quaternion{0, 0, 0, 1};
+  s.pose = pose;
+  s.size = fm::Vector3{size, size, size};
+  s.color = c;
+  return s;
+}
+
+fm::Point3 pt(const gtsam::Point3& p) { return fm::Point3{p.x(), p.y(), p.z()}; }
 
 }  // namespace
 
@@ -128,7 +152,14 @@ struct FoxgloveVisualizer::Impl {
     log.emplace(must(fm::LogChannel::create("/log", context), "channel log"));
     slam_path.emplace(
         must(fm::PosesInFrameChannel::create("/slam/path", context), "channel slam path"));
-    loops.emplace(must(fm::SceneUpdateChannel::create("/slam/loops", context), "channel loops"));
+    loops.emplace(must(fm::SceneUpdateChannel::create("/slam/graph", context), "channel graph"));
+    factors.emplace(
+        must(fm::SceneUpdateChannel::create("/vio/factors", context), "channel factors"));
+    const foxglove::Schema fschema{"kestrel.FactorStats", "jsonschema",
+                                   reinterpret_cast<const std::byte*>(kFactorStatsSchema),
+                                   std::strlen(kFactorStatsSchema)};
+    factor_stats.emplace(must(
+        foxglove::RawChannel::create("/vio/factor_stats", "json", fschema, context), "channel"));
     const foxglove::Schema schema{"kestrel.FrameStats", "jsonschema",
                                   reinterpret_cast<const std::byte*>(kStatsSchema),
                                   std::strlen(kStatsSchema)};
@@ -156,6 +187,8 @@ struct FoxgloveVisualizer::Impl {
   std::optional<fm::LogChannel> log;
   std::optional<fm::PosesInFrameChannel> slam_path;
   std::optional<fm::SceneUpdateChannel> loops;
+  std::optional<fm::SceneUpdateChannel> factors;
+  std::optional<foxglove::RawChannel> factor_stats;
   std::optional<foxglove::RawChannel> stats;
   std::vector<fm::Pose> keyframe_path;
   bool sent_camera = false;
@@ -291,6 +324,7 @@ void FoxgloveVisualizer::logFrame(double t, const cv::Mat& left_raw, const Featu
   const auto ba = out.bias.accelerometer(), bg = out.bias.gyroscope();
   js << ",\"bias_acc\":{\"x\":" << ba.x() << ",\"y\":" << ba.y() << ",\"z\":" << ba.z() << "}"
      << ",\"bias_gyr\":{\"x\":" << bg.x() << ",\"y\":" << bg.y() << ",\"z\":" << bg.z() << "}";
+  if (extras.loops >= 0) js << ",\"loops\":" << extras.loops;
   if (extras.ground_truth && out.initialized) {
     js << ",\"error_m\":" << (out.state.position() - extras.ground_truth->translation()).norm();
   }
@@ -328,6 +362,63 @@ void FoxgloveVisualizer::logGroundTruthPath(double t, const std::vector<gtsam::P
   impl_->gt_path->log(path, toNs(t));
 }
 
+void FoxgloveVisualizer::logWindowGraph(double t, const VioEstimator::WindowGraph& g) {
+  std::lock_guard<std::mutex> lock(impl_->mutex);
+  auto& I = *impl_;
+  const uint64_t ns = toNs(t);
+  auto keyframes = g.keyframes;
+  std::sort(keyframes.begin(), keyframes.end(),
+            [](const auto& a, const auto& b) { return a.first < b.first; });
+
+  fm::SceneEntity entity;
+  entity.timestamp = stamp(t);
+  entity.frame_id = "world";
+  entity.id = "window";
+  // Nodes: one sphere per keyframe state in the window.
+  for (const auto& kf : keyframes) {
+    entity.spheres.push_back(sphere(kf.second.translation(), 0.04, colour(1.0, 0.6, 0.0)));
+  }
+  // IMU factors connect consecutive keyframes (green).
+  fm::LinePrimitive imu;
+  imu.type = fm::LinePrimitive::LineType::LINE_STRIP;
+  imu.thickness = 3.0;
+  imu.scale_invariant = true;
+  imu.color = colour(0.1, 0.9, 0.2);
+  for (const auto& kf : keyframes) imu.points.push_back(pt(kf.second.translation()));
+  entity.lines.push_back(std::move(imu));
+  // Visual factors of the newest keyframe: rays from its camera to each observed landmark.
+  if (!keyframes.empty()) {
+    const gtsam::Point3 cam =
+        (keyframes.back().second * I.rig.bodyToRectifiedLeft()).translation();
+    std::unordered_map<int, gtsam::Point3> where(g.landmarks.begin(), g.landmarks.end());
+    fm::LinePrimitive rays;
+    rays.type = fm::LinePrimitive::LineType::LINE_LIST;
+    rays.thickness = 1.0;
+    rays.scale_invariant = true;
+    rays.color = colour(0.0, 0.8, 1.0, 0.35);
+    for (const int id : g.newest_observations) {
+      const auto it = where.find(id);
+      if (it == where.end()) continue;
+      rays.points.push_back(pt(cam));
+      rays.points.push_back(pt(it->second));
+    }
+    entity.lines.push_back(std::move(rays));
+  }
+  fm::SceneUpdate update;
+  update.entities.push_back(std::move(entity));
+  I.factors->log(update, ns);
+
+  std::ostringstream js;
+  js << "{\"keyframes\":" << keyframes.size() << ",\"landmarks\":" << g.landmarks.size()
+     << ",\"imu_factors\":" << g.imu_factors << ",\"visual_factors\":" << g.visual_factors
+     << ",\"prior_factors\":" << g.prior_factors << ",\"other_factors\":" << g.other_factors
+     << ",\"total_factors\":"
+     << g.imu_factors + g.visual_factors + g.prior_factors + g.other_factors
+     << ",\"newest_observations\":" << g.newest_observations.size() << "}";
+  const std::string json = js.str();
+  I.factor_stats->log(reinterpret_cast<const std::byte*>(json.data()), json.size(), ns);
+}
+
 void FoxgloveVisualizer::logLoopClosure(
     double t, const gtsam::Pose3& T_map_odom, const std::vector<gtsam::Pose3>& map_keyframe_path,
     const std::vector<std::pair<gtsam::Point3, gtsam::Point3>>& loop_edges) {
@@ -342,19 +433,31 @@ void FoxgloveVisualizer::logLoopClosure(
   for (const auto& p : map_keyframe_path) path.poses.push_back(toPose(p));
   I.slam_path->log(path, ns);
 
+  fm::SceneEntity entity;
+  entity.timestamp = stamp(t);
+  entity.frame_id = "map";
+  entity.id = "pose_graph";
+  // Odometry edges between consecutive keyframes (grey) and the keyframe nodes.
+  fm::LinePrimitive odometry;
+  odometry.type = fm::LinePrimitive::LineType::LINE_STRIP;
+  odometry.thickness = 1.5;
+  odometry.scale_invariant = true;
+  odometry.color = colour(0.6, 0.6, 0.6);
+  for (const auto& p : map_keyframe_path) {
+    odometry.points.push_back(pt(p.translation()));
+    entity.spheres.push_back(sphere(p.translation(), 0.025, colour(0.8, 0.8, 0.8)));
+  }
+  entity.lines.push_back(std::move(odometry));
+  // Verified loop closures (magenta).
   fm::LinePrimitive lines;
   lines.type = fm::LinePrimitive::LineType::LINE_LIST;
   lines.thickness = 3.0;
   lines.scale_invariant = true;
-  lines.color = colour(1.0, 0.0, 1.0);  // magenta
-  for (const auto& [a, b] : loop_edges) {
-    lines.points.push_back(fm::Point3{a.x(), a.y(), a.z()});
-    lines.points.push_back(fm::Point3{b.x(), b.y(), b.z()});
+  lines.color = colour(1.0, 0.0, 1.0);
+  for (const auto& edge : loop_edges) {
+    lines.points.push_back(pt(edge.first));
+    lines.points.push_back(pt(edge.second));
   }
-  fm::SceneEntity entity;
-  entity.timestamp = stamp(t);
-  entity.frame_id = "map";
-  entity.id = "loops";
   entity.lines.push_back(std::move(lines));
   fm::SceneUpdate update;
   update.entities.push_back(std::move(entity));

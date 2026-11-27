@@ -111,7 +111,8 @@ class LoopCloser {
              gtsam::Pose3* T_matchcam_querycam) const;
 
   /// Adds a loop constraint between two known keyframes and re-optimizes (also used by tests).
-  void addLoopConstraint(int match_id, int query_id, const gtsam::Pose3& T_match_query);
+  /// Returns false if the pose graph rejected it as inconsistent (see loop_max_chi2).
+  bool addLoopConstraint(int match_id, int query_id, const gtsam::Pose3& T_match_query);
 
  private:
   struct Record {

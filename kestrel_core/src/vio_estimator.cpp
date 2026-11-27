@@ -266,6 +266,41 @@ std::vector<std::pair<int, gtsam::Point3>> VioEstimator::landmarksInWindow() con
   return out;
 }
 
+VioEstimator::WindowGraph VioEstimator::windowGraph() const {
+  WindowGraph g;
+  if (num_keyframes_ == 0) return g;
+  const gtsam::Values estimate = smoother_->calculateEstimate();
+  for (const auto& kv : estimate) {
+    const gtsam::Symbol sym(kv.key);
+    if (sym.chr() == 'l') {
+      g.landmarks.emplace_back(static_cast<int>(sym.index()), kv.value.cast<gtsam::Point3>());
+    } else if (sym.chr() == 'x') {
+      g.keyframes.emplace_back(static_cast<int>(sym.index()), kv.value.cast<gtsam::Pose3>());
+    }
+  }
+  for (const auto& factor : smoother_->getFactors()) {
+    if (!factor) continue;  // empty slots left by marginalization
+    bool has_bias = false, has_landmark = false, has_pose = false;
+    for (const gtsam::Key key : factor->keys()) {
+      const char c = gtsam::Symbol(key).chr();
+      has_bias |= c == 'b';
+      has_landmark |= c == 'l';
+      has_pose |= c == 'x';
+    }
+    if (factor->size() == 1) {
+      ++g.prior_factors;
+    } else if (has_bias && factor->size() == 6) {
+      ++g.imu_factors;
+    } else if (has_landmark && has_pose) {
+      ++g.visual_factors;
+    } else {
+      ++g.other_factors;  // e.g. the marginalization prior
+    }
+  }
+  for (const auto& obs : last_observations_) g.newest_observations.push_back(obs.id);
+  return g;
+}
+
 void VioEstimator::readKeyframeState(int k) {
   kf_state_ = gtsam::NavState(smoother_->calculateEstimate<gtsam::Pose3>(X(k)),
                               smoother_->calculateEstimate<gtsam::Vector3>(V(k)));

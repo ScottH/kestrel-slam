@@ -1,0 +1,32 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# Benchmark registry for tools/regression_report.py.
+#
+# Each entry is one sequence. Add datasets here as they become available (e.g. our Gemini 335Lg
+# recordings once converted to ASL format); the report and the regression check pick them up.
+#
+#   name      unique id, used in tables and as the results folder name
+#   dataset   path under $KESTREL_DATA_DIR/datasets (the folder containing mav0/)
+#   config    Kestrel config, relative to the repository root
+#   group     groups rows in the report (e.g. one per dataset family)
+#   options   extra run_vio arguments (optional), e.g. ["--start-frame", "100"]
+#
+# Sequences whose data is missing are skipped (and reported as such), so the same registry works
+# on machines that have downloaded only part of the data.
+
+sequences:
+  - {name: tumvi_room1, group: TUM-VI, dataset: tumvi/room1_512_16, config: kestrel_core/config/tumvi_512.yaml}
+  - {name: tumvi_room2, group: TUM-VI, dataset: tumvi/room2_512_16, config: kestrel_core/config/tumvi_512.yaml}
+  - {name: tumvi_room3, group: TUM-VI, dataset: tumvi/room3_512_16, config: kestrel_core/config/tumvi_512.yaml}
+  - {name: tumvi_room4, group: TUM-VI, dataset: tumvi/room4_512_16, config: kestrel_core/config/tumvi_512.yaml}
+  - {name: tumvi_room5, group: TUM-VI, dataset: tumvi/room5_512_16, config: kestrel_core/config/tumvi_512.yaml}
+  - {name: tumvi_room6, group: TUM-VI, dataset: tumvi/room6_512_16, config: kestrel_core/config/tumvi_512.yaml}
+  - {name: euroc_MH_01_easy, group: EuRoC, dataset: euroc/MH_01_easy, config: kestrel_core/config/euroc.yaml}
+  - {name: euroc_MH_02_easy, group: EuRoC, dataset: euroc/MH_02_easy, config: kestrel_core/config/euroc.yaml}
+
+# Regression tolerances (current vs. tools/regression_baseline.json).
+tolerances:
+  ate_relative: 0.15      # ATE may grow by at most 15 % ...
+  ate_absolute_m: 0.005   # ... or 5 mm, whichever is larger (noise floor of small errors)
+  wrong_loops: 0          # no additional wrong loops
+  resets: 0               # no additional resets

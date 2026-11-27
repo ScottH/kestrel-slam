@@ -250,8 +250,16 @@ void visit(V& v, LoopClosureConfig& c) {
   v.field("orb_features", c.orb_features);
   v.field("min_bow_score", c.min_bow_score);
   v.field("min_inliers", c.min_inliers);
-  v.field("exclude_recent_keyframes", c.exclude_recent_keyframes);
+  v.field("exclude_recent_s", c.exclude_recent_s);
   v.field("temporal_consistency", c.temporal_consistency);
+  v.field("ratio_test", c.ratio_test);
+  v.field("pnp_reprojection_px", c.pnp_reprojection_px);
+  v.field("synchronous", c.synchronous);
+  v.field("odometry_sigma_rot", c.odometry_sigma_rot);
+  v.field("odometry_sigma_trans", c.odometry_sigma_trans);
+  v.field("loop_sigma_rot", c.loop_sigma_rot);
+  v.field("loop_sigma_trans", c.loop_sigma_trans);
+  v.field("loop_max_chi2", c.loop_max_chi2);
 }
 
 template <class V>
@@ -375,6 +383,12 @@ std::vector<std::string> Config::validate() const {
   // Loop closure
   require(loop_closure.min_inliers >= 6, "loop_closure.min_inliers must be >= 6 (PnP)");
   require(loop_closure.temporal_consistency >= 1, "loop_closure.temporal_consistency must be >= 1");
+  require(loop_closure.ratio_test > 0 && loop_closure.ratio_test <= 1,
+          "loop_closure.ratio_test must be in (0, 1]");
+  require(loop_closure.min_bow_score > 0, "loop_closure.min_bow_score must be > 0");
+  require(loop_closure.odometry_sigma_rot > 0 && loop_closure.odometry_sigma_trans > 0 &&
+              loop_closure.loop_sigma_rot > 0 && loop_closure.loop_sigma_trans > 0,
+          "loop_closure sigmas must be > 0");
 
   // Mapping
   require(mapping.voxel_size_m > 0.005, "mapping.voxel_size_m must be > 5 mm");

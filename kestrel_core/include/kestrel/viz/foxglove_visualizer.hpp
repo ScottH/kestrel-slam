@@ -23,7 +23,14 @@
 //   /vio/camera            camera frustum (3D panel)
 //   /vio/stats             per-frame numbers for Plot panels (JSON): features, losses by cause,
 //                          stereo matches, landmarks, solve time, biases, error vs. ground truth
+//   /slam/path             loop-corrected keyframe trajectory (map frame)
+//   /vio/factors           factor graph of the estimation window: keyframe nodes, IMU factors
+//                          (green), visual factors of the newest keyframe (cyan rays)
+//   /vio/factor_stats      factor counts by type (JSON, for plots)
+//   /slam/graph            pose graph: keyframe nodes, odometry edges (grey), verified loop
+//                          closures (magenta lines between the two keyframes)
 //   /log                   estimator messages (initialization, resets, warnings)
+// TF follows ROS REP-105: map → world (odometry frame, drift correction) → body → camera_left.
 //
 // Timestamps are the sensor times, so a recording replays with the original timing.
 
@@ -59,6 +66,7 @@ struct FoxgloveOptions {
 struct FrameExtras {
   double frame_ms = 0.0;                     ///< total processing time of this frame
   std::optional<gtsam::Pose3> ground_truth;  ///< aligned to the estimate's world frame
+  int loops = -1;                            ///< total loop closures so far (-1: unknown)
 };
 
 class FoxgloveVisualizer {
@@ -79,6 +87,17 @@ class FoxgloveVisualizer {
 
   /// Logs the full ground-truth trajectory once (already aligned to the estimate's world frame).
   void logGroundTruthPath(double t, const std::vector<gtsam::Pose3>& poses);
+
+  /// The estimator's factor graph (call at keyframes): keyframe nodes, IMU factors between
+  /// consecutive keyframes, and the visual factors of the newest keyframe as rays to the
+  /// landmarks it observes. Factor counts go to /vio/factor_stats for plotting.
+  void logWindowGraph(double t, const VioEstimator::WindowGraph& graph);
+
+  /// Loop closure: publishes TF map → world (the drift correction T_map_odom; "world" is the
+  /// odometry frame), the optimized keyframe path in the map frame, and loop edges as lines.
+  void logLoopClosure(double t, const gtsam::Pose3& T_map_odom,
+                      const std::vector<gtsam::Pose3>& map_keyframe_path,
+                      const std::vector<std::pair<gtsam::Point3, gtsam::Point3>>& loop_edges);
 
   /// Forwards a log message to the /log topic.
   void logMessage(double t, LogLevel level, const std::string& message);

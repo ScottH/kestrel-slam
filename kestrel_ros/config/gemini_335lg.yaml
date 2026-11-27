@@ -35,7 +35,7 @@ frontend:
   use_clahe: true     # IR images are often low-contrast
 
 loop_closure:
-  vocabulary_path: /data/vocabulary/kestrel_orb.voc   # trained in M5
+  vocabulary_path: /data/vocabulary/kestrel_orb_k10L5.fbow   # train_vocabulary (M5)
 
 mapping:
   max_integration_range_m: 5.0   # passive-stereo depth is noisy beyond ~5 m at 95 mm baseline

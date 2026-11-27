@@ -57,6 +57,16 @@ TEST(FoxgloveVisualizer, WritesMcapAndServesWebSocket) {
       viz.logFrame(t, image, frame, out, extras);
       if (out.is_keyframe) viz.logLandmarks(t, {{1, gtsam::Point3(1, 2, 3)}, {2, gtsam::Point3()}});
     }
+    VioEstimator::WindowGraph graph;
+    graph.keyframes = {{0, gtsam::Pose3()},
+                       {1, gtsam::Pose3(gtsam::Rot3(), gtsam::Point3(1, 0, 0))}};
+    graph.landmarks = {{5, gtsam::Point3(2, 1, 3)}, {6, gtsam::Point3(2, -1, 3)}};
+    graph.newest_observations = {5, 6, 7};  // 7 is not in the window: must be skipped
+    graph.imu_factors = 1;
+    graph.visual_factors = 4;
+    viz.logWindowGraph(100.5, graph);
+    viz.logLoopClosure(100.5, gtsam::Pose3(), {gtsam::Pose3(), gtsam::Pose3()},
+                       {{gtsam::Point3(0, 0, 0), gtsam::Point3(1, 1, 0)}});
     viz.logGroundTruthPath(100.0, {gtsam::Pose3(), gtsam::Pose3()});
     viz.logMessage(100.0, LogLevel::kInfo, "hello from the test");
   }  // destructor finishes the MCAP file

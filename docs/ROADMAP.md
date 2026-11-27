@@ -26,7 +26,7 @@ this file tracks *what is done* and *what is next*.
 | M2 | Stereo front-end | ✅ merged (PR #4); real-data exit check pending |
 | M3 | Sliding-window VIO (GTSAM fixed-lag smoother) | 🟡 in review (branch `m3`) |
 | M4 | Dynamic-object robustness | ⬜ |
-| M5 | Loop closure | ⬜ |
+| M5 | Loop closure (FBoW + PnP + iSAM2 pose graph) | 🟡 in review (branch `m5-loop-closure`) |
 | M6 | Multi-session maps & relocalization | ⬜ |
 | M7 | Lifelong mapping (persistence filters) | ⬜ |
 | M8 | Voxel map & change detection | ⬜ |
@@ -190,13 +190,36 @@ noise); Kestrel's `VioEstimator` is the policy, and `VisualInertialOdometry` the
 
 ---
 
+## Regression testing — cross-cutting
+
+- [x] `tools/regression_report.py`: runs every sequence in `tools/benchmarks.yaml`, writes a
+      summary table (mean/median/max) + `summary.json`, compares with
+      `tools/regression_baseline.json`, exits 1 on regressions (`docs/benchmarks.md`)
+- [ ] Initial baseline committed for TUM-VI rooms 1–6 and EuRoC MH_01/02
+- [ ] **Quick CI regression test (target: < 5 min on a GitHub runner).** Runs the real pipeline
+      end-to-end on a short, fixed clip and fails the build if accuracy regresses:
+  - [ ] Pick the clip: ~30–40 s of a TUM-VI room that contains at least one loop closure
+        (exercises tracking, the estimator and loop closure); trim it to a small archive
+        (< 300 MB) with a script, so it is reproducible
+  - [ ] Host the clip + the vocabulary where CI can fetch them quickly (GitHub release asset or
+        Actions cache keyed by checksum); verify checksums before use
+  - [ ] Registry entry with `ci: true`; `regression_report.py --ci` runs only those entries,
+        uses CI-specific tolerances (timing excluded — runners are noisy) and its own baseline
+  - [ ] CI job in `.github/workflows/ci.yml` after the unit tests; upload `report.md` as a
+        workflow artifact so failures are easy to inspect
+  - [ ] Determinism check: two runs of the clip must give identical trajectories (inline loop
+        closure), so failures are real regressions, not noise
+- [ ] Add our own Gemini 335Lg recordings to the registry as they arrive (D4–D18)
+
+---
+
 ## Visualization (Foxglove) — cross-cutting
 
 - [x] Foxglove SDK in the image (pinned, checksummed, x86-64 + aarch64)
 - [x] `kestrel_viz`: live WebSocket + MCAP recording of images, tracks, poses, TF, landmarks,
       frustum, per-frame stats and log messages (`docs/visualization.md`)
 - [x] `run_vio --foxglove / --mcap / --rate`; layout `tools/foxglove/kestrel_layout.json`
-- [ ] Loop-closure edges and the map-frame trajectory (with M5)
+- [x] Loop-closure edges, pose graph, window factor graph and the map-frame trajectory (M5)
 - [ ] Voxel map and change regions (with M8)
 - [ ] Same topics from the ROS node via foxglove_bridge (M9)
 
@@ -226,25 +249,44 @@ noise); Kestrel's `VioEstimator` is the policy, and `VisualInertialOdometry` the
 
 ## M5 — Loop closure
 
+*FBoW proposes places, OpenCV verifies them (ORB, PnP-RANSAC), GTSAM optimizes the pose graph
+(iSAM2). Kestrel's `LoopCloser` / `SlamSystem` are the policy and the glue.*
+
 **Build**
-- [ ] Keyframe ORB extraction + stereo 3D points
-- [ ] Vendor DBoW2 (pinned commit, BSD-style license) into the image
-- [ ] `train_vocabulary` tool wrapping DBoW2's builder; document the recipe (EuRoC + D5/D6)
-- [ ] DBoW2 database queries; temporal-consistency check
-- [ ] Geometric verification: descriptor matching + PnP-RANSAC
-- [ ] GTSAM pose graph (robust loop edges) in its own thread; drift correction `T_map_odom`
-- [ ] Loop events logged and visualized (markers)
+- [x] Keyframe ORB extraction + stereo 3D points (sub-pixel: cornerSubPix + LK on the matched row)
+- [x] FBoW in the image (pinned commit; ARM portability patch), behind a pluggable
+      `PlaceRecognizer` interface with our inverted index
+- [x] `train_vocabulary`; recipe: EuRoC MH_01+MH_02 → `data/vocabulary/kestrel_orb_k10L5.fbow`
+      (13 s), evaluated on TUM-VI (different places)
+- [x] Normalized BoW score, recent-past exclusion, temporal-consistency check
+- [x] Geometric verification: ratio-tested matching + EPnP-RANSAC + LM refinement, ≥ 80 inliers
+- [x] GTSAM iSAM2 pose graph (Gaussian loop edges — see theory ch. 08) in its own thread
+      (inline offline); drift correction `T_map_odom`; `SlamSystem` (REP-105 frames)
+- [x] `run_vio` writes map-frame trajectories and `loops.txt`; `tools/analyze_loops.py` audits
+      every loop against ground truth; `tools/regression_report.py` compares VIO vs. SLAM and checks for regressions
+- [x] Foxglove: pose graph `/slam/graph` (odometry edges, magenta loop closures), corrected path
+      `/slam/path`, window factor graph `/vio/factors` (IMU + visual factors), factor counts
 
 **Verify**
-- [ ] BoW: the same place scores higher than other places (unit test)
-- [ ] Pose graph removes injected drift on a synthetic loop
-- [ ] Precision check: zero accepted false loops on all EuRoC sequences plus D5, D6, D10
-- [ ] Tracking latency unaffected while the pose graph runs (p95 logged)
+- [x] BoW: the right place wins (unit test)
+- [x] Verification recovers a known relative pose to 2 mm / 0.04° and rejects another place
+- [x] Pose graph removes injected drift on a synthetic loop (0.77 m → 0.05 m)
+- [x] Precision: 0 wrong loops on TUM-VI room2 (152 loops audited vs. ground truth)
+- [x] Post-optimization consistency check (chi²) with a stiff pose graph removes imprecise loops
+- [ ] Precision on all benchmark sequences: a few imprecise loops (0.2–0.4 m, right place) still
+      pass on room1/room4/room6/MH_01. Next ideas: weight loop edges by the PnP inlier geometry
+      (covariance from the inlier spread / depth), reject loops dominated by distant points,
+      bidirectional verification
+- [ ] Tune loop-edge sigma to the measured loop accuracy (median ~2 cm / 0.6° vs. the current
+      5 cm / 1.1°) so single loops pull harder against the stiff odometry chain; re-baseline
+- [ ] Tracking latency while the pose graph runs (live, `--async`): p95 logged
 
-**Data**: **D5**, **D6** (figure-8), **D10** (perceptual aliasing: repetitive corridors/aisles).
+**Data**: TUM-VI rooms, EuRoC MH_01/02; later **D5**, **D6** (figure-8), **D10** (perceptual
+aliasing: repetitive corridors/aisles).
 
 **Exit**
-- [ ] Full-system ATE ≤ VIO-only ATE on every EuRoC sequence
+- [x] TUM-VI room2: ATE 18.3 cm (VIO) → 2.0 cm (SLAM, final pose graph)
+- [ ] Full-system ATE ≤ VIO-only ATE on every benchmark sequence
 - [ ] D5 / D6: end-point error after loop closure < 0.2 % of path length
 - [ ] D10: no false loops accepted (precision = 100 %)
 
@@ -352,7 +394,7 @@ noise); Kestrel's `VioEstimator` is the policy, and `VisualInertialOdometry` the
 - [ ] One-command benchmark: `docker compose run --rm bench` → `docs/benchmarks.md` table
 - [ ] Parameter sweeps (features, window size, noise inflation) with recorded results
 - [ ] Profiling (perf / tracing) on x86 and Jetson Orin
-- [ ] Regression guard: CI fails if EuRoC MH_01 ATE degrades > 10 % (small, cached subset)
+- [ ] Regression guard in CI: see "Regression testing" (quick CI regression test)
 
 **Verify / Exit**
 - [ ] Benchmarks table: EuRoC, TUM-VI (subset), your D-series, next to published baselines

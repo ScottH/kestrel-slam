@@ -32,10 +32,10 @@ Import **`tools/foxglove/kestrel_layout.json`** (Layouts → Import from file). 
 
 | Panel | Shows |
 |---|---|
-| **3D** (follows `body`) | keyframe trajectory `/vio/path`, aligned ground truth `/groundtruth/path`, landmarks in the window `/vio/landmarks`, camera frustum `/vio/camera`, TF frames `world → body → camera_left` and `body_gt` |
+| **3D** (follows `body`) | keyframe trajectory `/vio/path`, aligned ground truth `/groundtruth/path`, landmarks in the window `/vio/landmarks`, camera frustum `/vio/camera`, the **factor graph** of the estimation window `/vio/factors` (orange keyframe nodes, green IMU factors, cyan rays = visual factors of the newest keyframe), the **pose graph** `/slam/graph` (grey odometry edges, **magenta loop closures**), the loop-corrected path `/slam/path`; TF `map → world → body → camera_left` and `body_gt` |
 | **Image** | `/camera/left/image` with `/camera/left/features`: dots coloured by track age (red = new → green = ≥ 20 frames), lines = motion since the last frame, cyan rings = stereo match |
 | **Plot: Front end** | features, stereo matches, new detections, losses by cause (forward–backward, RANSAC, KLT) |
-| **Plot: Estimator** | landmarks in the window, new landmarks, outliers rejected |
+| **Plot: Estimator / factor graph** | visual and IMU factors in the window, landmarks, new landmarks, outliers rejected, loop closures so far |
 | **Plot: Timing** | total / front-end / solve time per frame |
 | **Plot: Error** | position error vs. (first-pose aligned) ground truth, speed |
 | **Plot: IMU bias** | gyro (and accelerometer) bias estimates |
@@ -49,8 +49,10 @@ settings and pick the topic from the table above. Every message path for plots i
 
 * **Red dots everywhere, few green**: tracks are short-lived. Look at the loss plot to see which
   check is responsible.
-* **Error rising steadily while the 3D view looks smooth**: odometry drift. Loop closure (M5)
-  is what removes it.
+* **Error rising steadily while the 3D view looks smooth**: odometry drift. Watch for magenta
+  loop edges in `/slam/graph`: each one pulls the map back, and the error plot drops.
+* **Few cyan rays from the newest keyframe**: few visual factors, so the IMU carries the
+  estimate; expect drift until texture returns.
 * **Spikes in `solve_ms`**: keyframes with many new landmarks; compare with `new_landmarks`.
 * **Bias estimates still moving after the first ~10 s**: weak excitation or a noise model that
   doesn't match the IMU.
@@ -67,5 +69,9 @@ settings and pick the topic from the table above. Every message path for plots i
 | `/groundtruth/path` | `foxglove.PosesInFrame` | aligned to the first estimated pose |
 | `/vio/landmarks` | `foxglove.PointCloud` | x, y, z, id; at keyframes |
 | `/vio/camera` | `foxglove.SceneUpdate` | frustum, frame-locked to `camera_left` |
-| `/vio/stats` | JSON (`kestrel.FrameStats`) | numbers for plots |
+| `/vio/stats` | JSON (`kestrel.FrameStats`) | numbers for plots (incl. `loops`) |
+| `/vio/factors` | `foxglove.SceneUpdate` | window factor graph, at keyframes |
+| `/vio/factor_stats` | JSON (`kestrel.FactorStats`) | factor counts by type |
+| `/slam/graph` | `foxglove.SceneUpdate` | pose graph: nodes, odometry edges, loop closures (frame `map`) |
+| `/slam/path` | `foxglove.PosesInFrame` | loop-corrected keyframe path (frame `map`) |
 | `/log` | `foxglove.Log` | estimator messages |

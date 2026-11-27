@@ -215,15 +215,36 @@ the optional GPU plug-ins listed in the DEV_PLAN.
 
 ## 9. In Kestrel
 
-| Concept | Where (planned) |
-|---------|-----------------|
-| ORB extraction + stereo 3-D on keyframes | `kestrel/loop/keyframe.hpp` — **planned (M5)** |
-| Vocabulary (k-majority tree, tf–idf), trainer tool | `kestrel/loop/vocabulary.hpp`, `apps/train_vocabulary.cpp` — **planned (M5)** |
-| Database with inverted index, islands, temporal consistency | `kestrel/loop/keyframe_database.hpp` — **planned (M5)** |
-| PnP-RANSAC verification | `kestrel/loop/loop_closing.cpp` — **planned (M5)** |
-| 4-DoF pose graph in its own thread, `T_map_odom` | `kestrel/loop/pose_graph.hpp` — **planned (M5)** |
-| Sequences, load/save, merging | `kestrel/io/map_io.hpp` — **planned (M6)** |
-| Parameters | `loop_closure:` section of the config (available now) |
+Libraries: **FBoW** (vocabulary tree, BoW transform), **OpenCV** (ORB, matching, PnP-RANSAC),
+**GTSAM** (iSAM2 pose graph). Kestrel adds the policy and the glue.
+
+| Concept | Where |
+|---------|-------|
+| Pluggable place recognition (interface) with an FBoW backend + inverted index | `kestrel/loop/place_recognizer.hpp` (M5) |
+| Vocabulary training (k-means tree, k = 10, L = 5) | `apps/train_vocabulary.cpp`; recipe: train on EuRoC MH_01+MH_02, evaluate on TUM-VI |
+| ORB on keyframes, sub-pixel stereo depth (cornerSubPix + LK on the matched row) | `LoopCloser::describe()` (M5) |
+| Normalized BoW score, recent-past exclusion, temporal consistency | `LoopCloser::process()` (M5) |
+| Verification: ratio-tested descriptor matches + EPnP-RANSAC + LM refinement | `LoopCloser::verify()` (M5) |
+| Pose graph (iSAM2, 6-DoF), Gaussian loop edges, `T_map_odom` | `LoopCloser::addLoopConstraint()`, `optimize()` (M5) |
+| Odometry + loop closure with REP-105 frames (map → odom → body) | `kestrel/slam_system.hpp` (M5) |
+| Loop audit against ground truth | `tools/analyze_loops.py` |
+| Sequences, load/save, merging | **planned (M6)** |
+| Parameters | `loop_closure:` section of the config |
+
+> **Lessons from M5 (measured on TUM-VI room2).**
+> 1. *Robust kernels on loop edges can hide the loops you need most.* With a Cauchy kernel at
+>    σ = 5 cm, a genuine loop after 0.77 m of drift was a 15σ "outlier" and was ignored. Kestrel
+>    uses Gaussian loop edges and relies on verification to keep wrong loops out.
+> 2. *So verification must be strict.* Auditing every loop against ground truth showed that all
+>    wrong loops had 29–46 PnP inliers, while good loops had a median of 262. Requiring 80 inliers
+>    removed every wrong loop and took room2 from 18.3 cm (odometry) to 2.0 cm ATE.
+> 3. *Sub-pixel stereo matters.* Integer ORB keypoints gave 3.5 cm / 0.6° loop-pose errors on
+>    synthetic data; sub-pixel refinement gave 2 mm / 0.04°.
+> 4. *A consistency check is only as good as the graph is stiff.* After optimization, a loop
+>    whose edge keeps a large chi² disagrees with everything else and is removed. With loose
+>    odometry edges (1 cm / 0.3° per keyframe) the graph simply bent to fit imprecise loops and
+>    nothing was ever rejected. Odometry edges that match the VIO's real short-term accuracy
+>    (2 mm / 0.06°) made those loops stand out: MH_01's online ATE went from 8.7 to 5.0 cm.
 
 ---
 

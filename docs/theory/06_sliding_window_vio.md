@@ -248,7 +248,7 @@ derived above. Kestrel's `VioEstimator` contributes the policy.
 | Static initialization (gravity → roll/pitch; gyro bias only if really still) | `VioEstimator::initializeStatic()` (M3) |
 | Pipeline wiring (IMU buffer → tracker → estimator, outlier feedback, IMU-rate prediction) | `kestrel/odometry.hpp` (M3) |
 | Synthetic end-to-end tests (circle, static start, outliers, determinism) | `test/test_vio_estimator.cpp`, `test/sim_world.hpp` (M3) |
-| Real-data runner and scoring | `run_vio`, `tools/evaluate.py`, `tools/benchmark_tumvi.sh`; results in `docs/benchmarks.md` |
+| Real-data runner and scoring | `run_vio`, `tools/evaluate.py`, `tools/regression_report.py`, `tools/analyze_loops.py`; results in `docs/benchmarks.md` |
 
 ---
 

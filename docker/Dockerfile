@@ -61,6 +61,23 @@ RUN if [ "${TARGETARCH}" = "arm64" ]; then arch=aarch64; sha=${FOXGLOVE_SDK_SHA2
  && rm -rf /tmp/foxglove-sdk /tmp/foxglove-sdk.zip
 ENV CMAKE_PREFIX_PATH=/opt/foxglove-sdk
 
+# FBoW (MIT/BSD-2): fast bag-of-binary-words vocabulary for loop-closure place recognition.
+# Not packaged for Ubuntu; built from a pinned commit. docker/patches/fbow_portable_simd.sh makes
+# its x86 SIMD code optional so it also builds on ARM (Jetson). On x86 FBoW uses AVX (any CPU
+# since ~2011); elsewhere its portable code path.
+ARG FBOW_REF=e148dbcbd8ee1976b1b07988b5761a9171b9f01a
+COPY docker/patches/fbow_portable_simd.sh /tmp/fbow_portable_simd.sh
+RUN if [ "${TARGETARCH}" = "arm64" ]; then simd="-DUSE_AVX=OFF -DUSE_SSE3=OFF"; else simd=""; fi \
+ && git init -q /tmp/fbow && cd /tmp/fbow \
+ && git remote add origin https://github.com/rmsalinas/fbow.git \
+ && git fetch -q --depth 1 origin ${FBOW_REF} && git checkout -q FETCH_HEAD \
+ && sh /tmp/fbow_portable_simd.sh /tmp/fbow \
+ && cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr/local \
+      -DBUILD_UTILS=OFF ${simd} > /dev/null \
+ && cmake --build build \
+ && cmake --install build > /dev/null \
+ && ldconfig && rm -rf /tmp/fbow /tmp/fbow_portable_simd.sh
+
 # ================================================================================================
 FROM base AS orbbec
 ARG ROS_DISTRO

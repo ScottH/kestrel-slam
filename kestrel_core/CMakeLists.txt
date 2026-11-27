@@ -31,6 +31,9 @@ find_package(GTSAM_UNSTABLE QUIET)
 if(TARGET gtsam_unstable)
   set(KESTREL_GTSAM_UNSTABLE gtsam_unstable)
 endif()
+# FBoW (bag-of-words for loop closure) is built into the Docker image (docker/Dockerfile).
+find_path(FBOW_INCLUDE_DIR fbow/fbow.h REQUIRED)
+find_library(FBOW_LIBRARY NAMES fbow REQUIRED)
 find_package(yaml-cpp REQUIRED)
 if(TARGET yaml-cpp::yaml-cpp)
   set(KESTREL_YAML_TARGET yaml-cpp::yaml-cpp)
@@ -51,7 +54,10 @@ add_library(kestrel_core
   src/euroc.cpp
   src/feature_tracker.cpp
   src/imu.cpp
+  src/loop_closer.cpp
   src/odometry.cpp
+  src/place_recognizer.cpp
+  src/slam_system.cpp
   src/stereo_rig.cpp
   src/vio_estimator.cpp
 )
@@ -65,10 +71,12 @@ target_link_libraries(kestrel_core PUBLIC
   ${OpenCV_LIBS}
   gtsam
   ${KESTREL_GTSAM_UNSTABLE}
+  ${FBOW_LIBRARY}
   ${KESTREL_YAML_TARGET}
   Threads::Threads
 )
 target_include_directories(kestrel_core SYSTEM PUBLIC ${OpenCV_INCLUDE_DIRS})
+target_include_directories(kestrel_core SYSTEM PRIVATE ${FBOW_INCLUDE_DIR})
 # -Wno-error=maybe-uninitialized: GCC 13 reports false positives inside Eigen's SVD when it is
 # instantiated through GTSAM headers (a known GCC/Eigen issue). It stays a warning, just not fatal.
 target_compile_options(kestrel_core PRIVATE -Wall -Wextra -Wpedantic
@@ -83,6 +91,8 @@ target_link_libraries(kestrel_info PRIVATE kestrel_core)
 add_executable(run_frontend apps/run_frontend.cpp)
 add_executable(run_vio apps/run_vio.cpp)
 target_link_libraries(run_vio PRIVATE kestrel_core)
+add_executable(train_vocabulary apps/train_vocabulary.cpp)
+target_link_libraries(train_vocabulary PRIVATE kestrel_core)
 
 # Optional: Foxglove visualization (live WebSocket + MCAP). Built when the Foxglove SDK is found
 # (the dev image ships it in /opt/foxglove-sdk); kestrel_core itself never depends on it.
@@ -115,6 +125,7 @@ if(KESTREL_BUILD_TESTS)
     test_feature_tracker
     test_gtsam_smoke
     test_imu
+    test_loop_closure
     test_stereo_rig
     test_vio_estimator
   )
@@ -139,7 +150,7 @@ install(DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/generated/ DESTINATION include)
 install(DIRECTORY config DESTINATION share/${PROJECT_NAME})
 install(TARGETS kestrel_core EXPORT kestrel_coreTargets
   ARCHIVE DESTINATION lib LIBRARY DESTINATION lib RUNTIME DESTINATION bin)
-install(TARGETS kestrel_info run_frontend run_vio RUNTIME DESTINATION lib/${PROJECT_NAME})
+install(TARGETS kestrel_info run_frontend run_vio train_vocabulary RUNTIME DESTINATION lib/${PROJECT_NAME})
 
 if(ament_cmake_FOUND)
   ament_export_targets(kestrel_coreTargets HAS_LIBRARY_TARGET)

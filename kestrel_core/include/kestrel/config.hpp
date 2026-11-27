@@ -120,10 +120,20 @@ struct LoopClosureConfig {
   bool enable = true;
   std::string vocabulary_path;  ///< empty → loop closure disabled with a warning
   int orb_features = 1000;
-  double min_bow_score = 0.015;
-  int min_inliers = 25;               ///< PnP-RANSAC inliers to accept a loop
-  int exclude_recent_keyframes = 30;  ///< don't match against the immediate past
-  int temporal_consistency = 2;       ///< consecutive consistent detections required
+  /// Minimum NORMALIZED similarity: score(query, candidate) / score(query, previous keyframe).
+  /// Normalizing by how similar the query is to its own neighbour makes one threshold work in
+  /// both texture-rich and bland scenes (as in DBoW2's loop detector).
+  double min_bow_score = 0.3;
+  int min_inliers = 25;              ///< PnP-RANSAC inliers to accept a loop
+  double exclude_recent_s = 20.0;    ///< don't match against the immediate past [s]
+  int temporal_consistency = 2;      ///< consecutive consistent detections required
+  double ratio_test = 0.8;           ///< descriptor matching: best/second-best distance ratio
+  double pnp_reprojection_px = 3.0;  ///< PnP-RANSAC inlier threshold
+  bool synchronous = false;          ///< process keyframes inline (offline runs: deterministic)
+  double odometry_sigma_rot = 0.005;   ///< pose-graph odometry edge noise [rad]
+  double odometry_sigma_trans = 0.01;  ///< [m]
+  double loop_sigma_rot = 0.02;        ///< loop edge noise [rad] (Gaussian, see LoopCloser)
+  double loop_sigma_trans = 0.05;      ///< [m]
 };
 
 /// Lifelong map management and the dense voxel map.

@@ -71,7 +71,10 @@ EurocDataset::EurocDataset(const std::string& root_str) {
     imu_.push_back(s);
   }
 
-  const fs::path gt = root / "state_groundtruth_estimate0" / "data.csv";
+  // Ground truth: EuRoC ships state_groundtruth_estimate0; TUM-VI ships mocap0 (motion-capture
+  // poses). Both start with: timestamp, p_x, p_y, p_z, q_w, q_x, q_y, q_z.
+  fs::path gt = root / "state_groundtruth_estimate0" / "data.csv";
+  if (!fs::exists(gt)) gt = root / "mocap0" / "data.csv";
   if (fs::exists(gt)) {
     for (const auto& row : readCsv(gt)) {
       if (row.size() < 8) continue;

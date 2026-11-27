@@ -36,7 +36,9 @@ x-kestrel-common: &common
     - kestrel-install:/ws/install
     - kestrel-log:/ws/log
     - kestrel-ccache:/ws/.ccache
-    - ./data:/data          # rosbags, datasets, maps, vocabularies
+    # rosbags, datasets, maps, vocabularies; point KESTREL_DATA_DIR elsewhere to share one data
+    # folder between checkouts/worktrees (e.g. export KESTREL_DATA_DIR=~/code/kestrel_slam/data)
+    - ${KESTREL_DATA_DIR:-./data}:/data
   # Host networking + shared IPC let ROS 2 (DDS) talk to nodes on the host or other containers
   # and the robot's network without port juggling.
   network_mode: host
@@ -74,7 +76,7 @@ services:
       - kestrel-install:/ws/install
       - kestrel-log:/ws/log
       - kestrel-ccache:/ws/.ccache
-      - ./data:/data
+      - ${KESTREL_DATA_DIR:-./data}:/data
       - /dev:/dev
       - /run/udev:/run/udev:ro
     environment:

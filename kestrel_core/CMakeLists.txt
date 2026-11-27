@@ -26,6 +26,11 @@ find_package(ament_cmake QUIET)
 find_package(Eigen3 3.3 REQUIRED NO_MODULE)
 find_package(OpenCV 4 REQUIRED COMPONENTS core imgproc imgcodecs videoio features2d video calib3d)
 find_package(GTSAM 4.2 REQUIRED)  # poses, IMU preintegration, factor graphs, iSAM2
+# Fixed-lag smoothers are in gtsam_unstable up to GTSAM 4.2 (core library from 4.3 on).
+find_package(GTSAM_UNSTABLE QUIET)
+if(TARGET gtsam_unstable)
+  set(KESTREL_GTSAM_UNSTABLE gtsam_unstable)
+endif()
 find_package(yaml-cpp REQUIRED)
 if(TARGET yaml-cpp::yaml-cpp)
   set(KESTREL_YAML_TARGET yaml-cpp::yaml-cpp)
@@ -46,7 +51,9 @@ add_library(kestrel_core
   src/euroc.cpp
   src/feature_tracker.cpp
   src/imu.cpp
+  src/odometry.cpp
   src/stereo_rig.cpp
+  src/vio_estimator.cpp
 )
 target_include_directories(kestrel_core PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
@@ -57,12 +64,15 @@ target_link_libraries(kestrel_core PUBLIC
   Eigen3::Eigen
   ${OpenCV_LIBS}
   gtsam
+  ${KESTREL_GTSAM_UNSTABLE}
   ${KESTREL_YAML_TARGET}
   Threads::Threads
 )
 target_include_directories(kestrel_core SYSTEM PUBLIC ${OpenCV_INCLUDE_DIRS})
+# -Wno-error=maybe-uninitialized: GCC 13 reports false positives inside Eigen's SVD when it is
+# instantiated through GTSAM headers (a known GCC/Eigen issue). It stays a warning, just not fatal.
 target_compile_options(kestrel_core PRIVATE -Wall -Wextra -Wpedantic
-  $<$<BOOL:${KESTREL_WARNINGS_AS_ERRORS}>:-Werror>)
+  $<$<BOOL:${KESTREL_WARNINGS_AS_ERRORS}>:-Werror -Wno-error=maybe-uninitialized>)
 set_target_properties(kestrel_core PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
 # ------------------------------------------------------------------------------------------------
@@ -71,6 +81,8 @@ set_target_properties(kestrel_core PROPERTIES POSITION_INDEPENDENT_CODE ON)
 add_executable(kestrel_info apps/kestrel_info.cpp)
 target_link_libraries(kestrel_info PRIVATE kestrel_core)
 add_executable(run_frontend apps/run_frontend.cpp)
+add_executable(run_vio apps/run_vio.cpp)
+target_link_libraries(run_vio PRIVATE kestrel_core)
 target_link_libraries(run_frontend PRIVATE kestrel_core)
 
 # ------------------------------------------------------------------------------------------------
@@ -87,6 +99,7 @@ if(KESTREL_BUILD_TESTS)
     test_gtsam_smoke
     test_imu
     test_stereo_rig
+    test_vio_estimator
   )
   foreach(test_name IN LISTS KESTREL_TESTS)
     add_executable(${test_name} test/${test_name}.cpp)
@@ -104,11 +117,14 @@ install(DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/generated/ DESTINATION include)
 install(DIRECTORY config DESTINATION share/${PROJECT_NAME})
 install(TARGETS kestrel_core EXPORT kestrel_coreTargets
   ARCHIVE DESTINATION lib LIBRARY DESTINATION lib RUNTIME DESTINATION bin)
-install(TARGETS kestrel_info run_frontend RUNTIME DESTINATION lib/${PROJECT_NAME})
+install(TARGETS kestrel_info run_frontend run_vio RUNTIME DESTINATION lib/${PROJECT_NAME})
 
 if(ament_cmake_FOUND)
   ament_export_targets(kestrel_coreTargets HAS_LIBRARY_TARGET)
   ament_export_dependencies(Eigen3 OpenCV GTSAM yaml-cpp)
+  if(KESTREL_GTSAM_UNSTABLE)
+    ament_export_dependencies(GTSAM_UNSTABLE)
+  endif()
   ament_package()
 else()
   install(EXPORT kestrel_coreTargets NAMESPACE kestrel_core:: DESTINATION lib/cmake/kestrel_core)

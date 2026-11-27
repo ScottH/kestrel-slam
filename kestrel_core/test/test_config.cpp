@@ -65,14 +65,14 @@ TEST(Config, RejectsInvalidValues) {
   // Window too small and a non-rigid extrinsic: both problems should be reported together.
   try {
     loadConfigFromString(R"(
-estimator: { window_size: 2 }
+estimator: { smoother_lag_s: 0.1 }
 camera:
   T_imu_left: [2,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1]
 )");
     FAIL() << "expected ConfigError";
   } catch (const ConfigError& e) {
     const std::string msg = e.what();
-    EXPECT_NE(msg.find("window_size"), std::string::npos) << msg;
+    EXPECT_NE(msg.find("smoother_lag_s"), std::string::npos) << msg;
     EXPECT_NE(msg.find("T_imu_left"), std::string::npos) << msg;
   }
 }
@@ -101,7 +101,8 @@ TEST(Config, ShippedConfigsAreValid) {
   const char* repo = std::getenv("KESTREL_REPO_ROOT");
   ASSERT_NE(repo, nullptr) << "KESTREL_REPO_ROOT not set by CMake";
   for (const std::string rel :
-       {"kestrel_core/config/euroc.yaml", "kestrel_ros/config/gemini_335lg.yaml"}) {
+       {"kestrel_core/config/euroc.yaml", "kestrel_core/config/tumvi_512.yaml",
+        "kestrel_ros/config/gemini_335lg.yaml"}) {
     SCOPED_TRACE(rel);
     const Config config = loadConfig(std::string(repo) + "/" + rel);
     EXPECT_TRUE(config.validate().empty());

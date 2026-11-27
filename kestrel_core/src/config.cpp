@@ -219,20 +219,24 @@ void visit(V& v, FrontendConfig& c) {
 
 template <class V>
 void visit(V& v, EstimatorConfig& c) {
-  v.field("window_size", c.window_size);
-  v.field("keyframe_parallax_px", c.keyframe_parallax_px);
+  v.field("smoother_lag_s", c.smoother_lag_s);
+  v.field("keyframe_interval_s", c.keyframe_interval_s);
+  v.field("min_keyframe_tracks", c.min_keyframe_tracks);
   v.field("observation_sigma_px", c.observation_sigma_px);
+  v.field("robust_kernel_k", c.robust_kernel_k);
+  v.field("outlier_reprojection_px", c.outlier_reprojection_px);
+  v.field("gate_reprojection_px", c.gate_reprojection_px);
   v.field("min_depth_m", c.min_depth_m);
   v.field("max_depth_m", c.max_depth_m);
-  v.field("max_solver_iterations", c.max_solver_iterations);
-  v.field("max_solver_time_s", c.max_solver_time_s);
-  v.field("estimate_extrinsics", c.estimate_extrinsics);
+  v.field("init_static_window_s", c.init_static_window_s);
+  v.field("init_velocity_sigma", c.init_velocity_sigma);
+  v.field("init_accel_bias_sigma", c.init_accel_bias_sigma);
+  v.field("init_gyro_bias_sigma", c.init_gyro_bias_sigma);
 }
 
 template <class V>
 void visit(V& v, DynamicConfig& c) {
   v.field("enable", c.enable);
-  v.field("outlier_reprojection_px", c.outlier_reprojection_px);
   v.field("grid_rows", c.grid_rows);
   v.field("grid_cols", c.grid_cols);
   v.field("heat_decay", c.heat_decay);
@@ -350,8 +354,16 @@ std::vector<std::string> Config::validate() const {
           "frontend.klt_window_px must be odd and >= 5");
 
   // Estimator
-  require(estimator.window_size >= 4 && estimator.window_size <= 30,
-          "estimator.window_size must be in [4, 30]");
+  require(estimator.keyframe_interval_s > 0, "estimator.keyframe_interval_s must be > 0");
+  require(estimator.smoother_lag_s >= 4 * estimator.keyframe_interval_s,
+          "estimator.smoother_lag_s must span at least 4 keyframe intervals");
+  require(estimator.robust_kernel_k > 0, "estimator.robust_kernel_k must be > 0");
+  require(estimator.outlier_reprojection_px > 0, "estimator.outlier_reprojection_px must be > 0");
+  require(estimator.gate_reprojection_px >= estimator.outlier_reprojection_px,
+          "estimator.gate_reprojection_px must be >= outlier_reprojection_px");
+  require(estimator.init_static_window_s > 0 && estimator.init_velocity_sigma > 0 &&
+              estimator.init_accel_bias_sigma > 0 && estimator.init_gyro_bias_sigma > 0,
+          "estimator.init_* values must be > 0");
   require(estimator.min_depth_m > 0 && estimator.max_depth_m > estimator.min_depth_m,
           "estimator depth range must satisfy 0 < min_depth_m < max_depth_m");
   require(estimator.observation_sigma_px > 0, "estimator.observation_sigma_px must be > 0");

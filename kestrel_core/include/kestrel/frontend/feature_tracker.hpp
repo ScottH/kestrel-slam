@@ -74,6 +74,7 @@ struct FrontendStats {
   int lost_ransac = 0;  ///< rejected by fundamental-matrix RANSAC
   int lost_mask = 0;    ///< inside the external mask
   int dropped_by_backend = 0;
+  int thinned = 0;   ///< removed for being too close to a longer track
   int detected = 0;  ///< new corners
   int stereo_matched = 0;
   int stereo_rejected = 0;  ///< KLT found a match but the row/disparity check failed

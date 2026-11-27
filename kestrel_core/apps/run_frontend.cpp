@@ -74,6 +74,8 @@ int main(int argc, char** argv) {
 
     cv::VideoWriter video;
     std::vector<double> features, stereo, ms, new_per_frame;
+    kestrel::FrontendStats losses;    // summed over all frames
+    std::vector<double> feature_age;  // per frame: median track length of the features in view
     std::vector<double> finished_track_lengths;
     std::map<int, int> alive;  // id → length, to measure how long tracks live
 
@@ -91,7 +93,12 @@ int main(int argc, char** argv) {
       const auto frame = tracker.track(t, left, right, R_prev_cur);
 
       std::map<int, int> now;
-      for (const auto& f : frame.features) now[f.id] = f.track_length;
+      std::vector<double> ages;
+      for (const auto& f : frame.features) {
+        now[f.id] = f.track_length;
+        ages.push_back(f.track_length);
+      }
+      feature_age.push_back(percentile(ages, 0.5));
       for (const auto& [id, len] : alive) {
         if (!now.count(id)) finished_track_lengths.push_back(len);
       }
@@ -100,6 +107,13 @@ int main(int argc, char** argv) {
       features.push_back(static_cast<double>(frame.features.size()));
       stereo.push_back(frame.stats.stereo_matched);
       new_per_frame.push_back(frame.stats.detected);
+      losses.tracked += frame.stats.tracked;
+      losses.lost_klt += frame.stats.lost_klt;
+      losses.lost_fb += frame.stats.lost_fb;
+      losses.lost_ransac += frame.stats.lost_ransac;
+      losses.lost_mask += frame.stats.lost_mask;
+      losses.thinned += frame.stats.thinned;
+      losses.stereo_rejected += frame.stats.stereo_rejected;
       ms.push_back(frame.stats.ms_total);
 
       if (!video_path.empty()) {
@@ -122,8 +136,20 @@ int main(int argc, char** argv) {
     std::printf("stereo matches / frame mean %.1f   p5 %.0f\n", mean(stereo),
                 percentile(stereo, 0.05));
     std::printf("new features / frame   mean %.1f\n", mean(new_per_frame));
-    std::printf("track length [frames]  median %.0f   p90 %.0f\n",
+    std::printf(
+        "age of features in view [frames]  median %.0f (per-frame median, averaged: %.1f)\n",
+        percentile(feature_age, 0.5), mean(feature_age));
+    std::printf("finished tracks [frames]  median %.0f   p90 %.0f\n",
                 percentile(finished_track_lengths, 0.5), percentile(finished_track_lengths, 0.9));
+    const double lost_total =
+        losses.lost_klt + losses.lost_fb + losses.lost_ransac + losses.lost_mask + losses.thinned;
+    std::printf(
+        "track losses           klt/out-of-image %d  forward-backward %d  ransac %d  mask %d  "
+        "thinned %d"
+        "  (%.1f %% of attempted tracks lost per frame)\n",
+        losses.lost_klt, losses.lost_fb, losses.lost_ransac, losses.lost_mask, losses.thinned,
+        100.0 * lost_total / std::max(1.0, lost_total + losses.tracked));
+    std::printf("stereo rejected        %d\n", losses.stereo_rejected);
     std::printf("time / frame [ms]      median %.2f   p95 %.2f\n", percentile(ms, 0.5),
                 percentile(ms, 0.95));
   } catch (const std::exception& e) {

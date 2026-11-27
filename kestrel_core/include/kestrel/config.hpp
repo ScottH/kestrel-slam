@@ -90,21 +90,26 @@ struct FrontendConfig {
 
 /// Sliding-window visual-inertial estimator.
 struct EstimatorConfig {
-  int window_size = 10;                ///< number of keyframes in the optimization window
-  double keyframe_parallax_px = 10.0;  ///< mean parallax that makes a frame a keyframe
-  double observation_sigma_px = 1.5;   ///< reprojection noise std-dev
-  double min_depth_m = 0.1;
-  double max_depth_m = 40.0;
-  int max_solver_iterations = 8;
-  double max_solver_time_s = 0.04;   ///< hard real-time budget per optimization
-  bool estimate_extrinsics = false;  ///< refine camera–IMU extrinsics online
+  double smoother_lag_s = 2.0;        ///< length of the fixed-lag smoothing window
+  double keyframe_interval_s = 0.1;   ///< a frame becomes a keyframe this long after the last one
+  int min_keyframe_tracks = 40;       ///< ... or earlier, when fewer stereo tracks than this remain
+  double observation_sigma_px = 1.0;  ///< stereo/mono reprojection noise std-dev
+  double robust_kernel_k = 1.5;       ///< Huber threshold, in units of observation_sigma_px
+  double outlier_reprojection_px = 4.0;  ///< error after a solve that marks a landmark as outlier
+  double gate_reprojection_px = 12.0;    ///< max error vs. the IMU-predicted projection to accept
+                                         ///< an observation (larger: the track jumped)
+  double min_depth_m = 0.2;              ///< stereo points closer than this are not used
+  double max_depth_m = 15.0;             ///< ... nor farther (depth uncertainty grows with z²)
+  double init_static_window_s = 0.5;     ///< IMU history averaged for the static start
+  double init_velocity_sigma = 0.1;      ///< prior on the start velocity [m/s] (static start)
+  double init_accel_bias_sigma = 0.1;    ///< prior on the start accelerometer bias [m/s²]
+  double init_gyro_bias_sigma = 0.01;    ///< prior on the start gyro bias [rad/s]
 };
 
 /// Short-term dynamic-object handling.
 struct DynamicConfig {
   bool enable = true;
-  double outlier_reprojection_px = 3.0;  ///< mean reprojection error that flags a feature
-  int grid_rows = 6;                     ///< resolution of the "dynamic heat" grid
+  int grid_rows = 6;  ///< resolution of the "dynamic heat" grid
   int grid_cols = 8;
   double heat_decay = 0.8;           ///< per-frame decay of the heat map
   double heat_mask_threshold = 0.5;  ///< cells above this block new features

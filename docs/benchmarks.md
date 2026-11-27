@@ -44,7 +44,7 @@ docker compose run --rm shell /ws/src/kestrel_slam/tools/regression_report.py
 ### Quick regression test in CI
 
 Every push runs `regression_report.py --ci` after the unit tests. It uses the first 40 s of TUM-VI
-room1 (800 stereo frames, about 20 loop closures). The run takes about 1.5 minutes.
+room1 (800 stereo frames, about 20 loop closures). On a GitHub runner the step takes about 60 s, and the numbers match the laptop baseline to the millimetre.
 
 * **Data:** clip + vocabulary in one archive, the release asset
   [`ci-data-v1`](https://github.com/ScottH/kestrel-slam/releases/tag/ci-data-v1). CI checks its

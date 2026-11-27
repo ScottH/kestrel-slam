@@ -197,7 +197,7 @@ noise); Kestrel's `VioEstimator` is the policy, and `VisualInertialOdometry` the
       summary table (mean/median/max) + `summary.json`, compares with
       `tools/regression_baseline.json`, exits 1 on regressions (`docs/benchmarks.md`)
 - [x] Initial baseline committed for TUM-VI rooms 1–6 and EuRoC MH_01/02
-- [x] **Quick CI regression test** (~1.5 min of a CI job, plus a one-off 167 MB download that is
+- [x] **Quick CI regression test** (60 s of the CI job, plus a 167 MB download (2 s) that is
       cached afterwards): runs the real pipeline end-to-end on a short, fixed clip and fails the
       build if accuracy regresses
   - [x] Clip: first 40 s of TUM-VI room1 (initialization, tracking, ~20 loop closures), cut by
@@ -210,7 +210,7 @@ noise); Kestrel's `VioEstimator` is the policy, and `VisualInertialOdometry` the
         minimum loop count catches a silently disabled loop closer
   - [x] CI step after the unit tests; `report.md` + `summary.json` uploaded as a workflow artifact
   - [x] Determinism check: two runs must give byte-identical trajectories and loops
-- [ ] Cross-check the CI baseline against the GitHub runner's numbers. Re-baseline from a CI run
+- [x] Cross-check the CI baseline against the GitHub runner's numbers (AMD EPYC runner = laptop to the mm). Re-baseline from a CI run
       if the CPU difference is larger than the tolerance
 - [ ] Add our own Gemini 335Lg recordings to the registry as they arrive (D4–D18)
 

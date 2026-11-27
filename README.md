@@ -32,6 +32,11 @@ docker compose run --rm test      # build everything and run the unit tests
 docker compose run --rm shell     # interactive shell with all tools
 ```
 
+### Watch it run (Foxglove)
+
+`run_vio … --foxglove` streams the SLAM internals live (open `ws://<machine>:8765` in Foxglove),
+`--mcap run.mcap` records them. See [docs/visualization.md](docs/visualization.md).
+
 ### Record data with the camera
 
 ```bash

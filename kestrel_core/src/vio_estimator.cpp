@@ -260,7 +260,8 @@ std::vector<std::pair<int, gtsam::Point3>> VioEstimator::landmarksInWindow() con
   const gtsam::Values estimate = smoother_->calculateEstimate();
   for (const auto& kv : estimate) {
     const gtsam::Symbol sym(kv.key);
-    if (sym.chr() == 'l') out.emplace_back(static_cast<int>(sym.index()), kv.value.cast<gtsam::Point3>());
+    if (sym.chr() == 'l')
+      out.emplace_back(static_cast<int>(sym.index()), kv.value.cast<gtsam::Point3>());
   }
   return out;
 }

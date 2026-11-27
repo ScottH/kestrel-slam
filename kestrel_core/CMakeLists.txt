@@ -124,6 +124,11 @@ if(KESTREL_BUILD_TESTS)
     gtest_discover_tests(${test_name} DISCOVERY_TIMEOUT 30
       PROPERTIES ENVIRONMENT "KESTREL_REPO_ROOT=${CMAKE_CURRENT_SOURCE_DIR}/..")
   endforeach()
+  if(TARGET kestrel_viz)
+    add_executable(test_foxglove_visualizer test/test_foxglove_visualizer.cpp)
+    target_link_libraries(test_foxglove_visualizer PRIVATE kestrel_viz GTest::gtest_main)
+    gtest_discover_tests(test_foxglove_visualizer DISCOVERY_TIMEOUT 30)
+  endif()
 endif()
 
 # ------------------------------------------------------------------------------------------------

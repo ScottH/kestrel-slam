@@ -127,7 +127,9 @@ int main(int argc, char** argv) {
     // --- optional Foxglove visualization -----------------------------------------------------
 #ifdef KESTREL_WITH_FOXGLOVE
     std::unique_ptr<kestrel::FoxgloveVisualizer> viz;
-    double viz_time = 0.0;  // sensor time of the frame being processed (for log messages)
+    // Sensor time of the frame being processed, used to stamp log messages. Starts at the first
+    // frame so messages logged before it do not land at t = 0 (1970) on the Foxglove timeline.
+    double viz_time = start_frame < dataset.images().size() ? dataset.images()[start_frame].t : 0.0;
     if (foxglove_live || !mcap_path.empty()) {
       kestrel::FoxgloveOptions fo;
       fo.websocket = foxglove_live;
@@ -135,11 +137,11 @@ int main(int argc, char** argv) {
       fo.mcap_path = mcap_path;
       viz = std::make_unique<kestrel::FoxgloveVisualizer>(fo, vio.rig());
       // Mirror log messages into Foxglove's Log panel (and keep printing them).
-      kestrel::setLogSink([&viz, &viz_time](kestrel::LogLevel level, const char*, int,
-                                            const std::string& msg) {
-        std::cerr << "[kestrel] [" << kestrel::toString(level) << "] " << msg << '\n';
-        if (viz) viz->logMessage(viz_time, level, msg);
-      });
+      kestrel::setLogSink(
+          [&viz, &viz_time](kestrel::LogLevel level, const char*, int, const std::string& msg) {
+            std::cerr << "[kestrel] [" << kestrel::toString(level) << "] " << msg << '\n';
+            if (viz) viz->logMessage(viz_time, level, msg);
+          });
     }
 #else
     if (foxglove_live || !mcap_path.empty()) {
@@ -151,8 +153,8 @@ int main(int argc, char** argv) {
     const auto& images = dataset.images();
     const auto& imu = dataset.imu();
     // Frames [start_frame, end): e.g. to skip a damaged or incomplete beginning of a sequence.
-    const std::size_t end = max_frames > 0 ? std::min(images.size(), start_frame + max_frames)
-                                           : images.size();
+    const std::size_t end =
+        max_frames > 0 ? std::min(images.size(), start_frame + max_frames) : images.size();
     const std::size_t n = end > start_frame ? end - start_frame : 0;
     KLOG_INFO("run_vio: " << n << " frames, " << imu.size() << " IMU samples → " << out_dir);
 

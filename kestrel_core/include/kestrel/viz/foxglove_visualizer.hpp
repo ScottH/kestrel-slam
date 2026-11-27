@@ -48,17 +48,17 @@
 namespace kestrel {
 
 struct FoxgloveOptions {
-  bool websocket = false;          ///< serve live data on ws://host:port
-  std::string host = "0.0.0.0";    ///< 0.0.0.0: reachable from other machines on the network
+  bool websocket = false;        ///< serve live data on ws://host:port
+  std::string host = "0.0.0.0";  ///< 0.0.0.0: reachable from other machines on the network
   uint16_t port = 8765;
-  std::string mcap_path;           ///< record to this MCAP file (empty: no recording)
+  std::string mcap_path;  ///< record to this MCAP file (empty: no recording)
   int jpeg_quality = 80;
 };
 
 /// Extra per-frame numbers for the stats topic that the pipeline outputs don't carry.
 struct FrameExtras {
-  double frame_ms = 0.0;                      ///< total processing time of this frame
-  std::optional<gtsam::Pose3> ground_truth;   ///< aligned to the estimate's world frame
+  double frame_ms = 0.0;                     ///< total processing time of this frame
+  std::optional<gtsam::Pose3> ground_truth;  ///< aligned to the estimate's world frame
 };
 
 class FoxgloveVisualizer {

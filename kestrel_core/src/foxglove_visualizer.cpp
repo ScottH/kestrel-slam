@@ -4,15 +4,14 @@
 
 #include "kestrel/viz/foxglove_visualizer.hpp"
 
+#include <algorithm>
+#include <cmath>
+#include <cstring>
 #include <foxglove/channel.hpp>
 #include <foxglove/context.hpp>
 #include <foxglove/mcap.hpp>
 #include <foxglove/messages.hpp>
 #include <foxglove/server.hpp>
-
-#include <algorithm>
-#include <cmath>
-#include <cstring>
 #include <mutex>
 #include <opencv2/imgcodecs.hpp>
 #include <sstream>
@@ -26,13 +25,15 @@ namespace fm = foxglove::messages;
 template <typename T>
 T must(foxglove::FoxgloveResult<T>&& result, const std::string& what) {
   if (!result.has_value()) {
-    throw std::runtime_error("Foxglove: " + what + " failed: " +
-                             foxglove::strerror(result.error()));
+    throw std::runtime_error("Foxglove: " + what +
+                             " failed: " + foxglove::strerror(result.error()));
   }
   return std::move(result.value());
 }
 
-uint64_t toNs(double t) { return static_cast<uint64_t>(std::llround(std::max(t, 0.0) * 1e9)); }
+uint64_t toNs(double t) {
+  return static_cast<uint64_t>(std::llround(std::max(t, 0.0) * 1e9));
+}
 
 fm::Timestamp stamp(double t) {
   const uint64_t ns = toNs(t);
@@ -60,7 +61,9 @@ fm::FrameTransform toTf(double t, const std::string& parent, const std::string& 
   return tf;
 }
 
-fm::Color colour(double r, double g, double b, double a = 1.0) { return fm::Color{r, g, b, a}; }
+fm::Color colour(double r, double g, double b, double a = 1.0) {
+  return fm::Color{r, g, b, a};
+}
 
 /// Red (new) → green (tracked for ≥ 20 frames).
 fm::Color ageColour(int track_length) {
@@ -111,8 +114,8 @@ struct FoxgloveVisualizer::Impl {
       mcap.emplace(must(foxglove::McapWriter::create(mo), "MCAP writer " + opt.mcap_path));
     }
     tf.emplace(must(fm::FrameTransformChannel::create("/tf", context), "channel /tf"));
-    image.emplace(must(fm::CompressedImageChannel::create("/camera/left/image", context),
-                       "channel image"));
+    image.emplace(
+        must(fm::CompressedImageChannel::create("/camera/left/image", context), "channel image"));
     features.emplace(must(fm::ImageAnnotationsChannel::create("/camera/left/features", context),
                           "channel features"));
     pose.emplace(must(fm::PoseInFrameChannel::create("/vio/pose", context), "channel pose"));
@@ -126,8 +129,8 @@ struct FoxgloveVisualizer::Impl {
     const foxglove::Schema schema{"kestrel.FrameStats", "jsonschema",
                                   reinterpret_cast<const std::byte*>(kStatsSchema),
                                   std::strlen(kStatsSchema)};
-    stats.emplace(must(foxglove::RawChannel::create("/vio/stats", "json", schema, context),
-                       "channel stats"));
+    stats.emplace(
+        must(foxglove::RawChannel::create("/vio/stats", "json", schema, context), "channel stats"));
   }
 
   ~Impl() {
@@ -214,7 +217,8 @@ void FoxgloveVisualizer::logFrame(double t, const cv::Mat& left_raw, const Featu
   ann.points.push_back(std::move(points));
   I.features->log(ann, ns);
 
-  // --- poses and frames ----------------------------------------------------------------------------
+  // --- poses and frames
+  // ----------------------------------------------------------------------------
   if (out.initialized) {
     I.tf->log(toTf(t, "world", "body", out.state.pose()), ns);
     I.tf->log(toTf(t, "body", "camera_left", I.rig.bodyToRectifiedLeft()), ns);
@@ -263,18 +267,18 @@ void FoxgloveVisualizer::logFrame(double t, const cv::Mat& left_raw, const Featu
     I.sent_camera = true;
   }
 
-  // --- numbers for Plot panels ----------------------------------------------------------------------
+  // --- numbers for Plot panels
+  // ----------------------------------------------------------------------
   const auto& s = frame.stats;
   std::ostringstream js;
   js.precision(9);
   js << "{\"t\":" << t << ",\"initialized\":" << (out.initialized ? "true" : "false")
      << ",\"keyframe\":" << (out.is_keyframe ? "true" : "false")
-     << ",\"reset\":" << (out.reset ? "true" : "false")
-     << ",\"features\":" << frame.features.size() << ",\"tracked\":" << s.tracked
-     << ",\"detected\":" << s.detected << ",\"stereo_matched\":" << s.stereo_matched
-     << ",\"lost_klt\":" << s.lost_klt << ",\"lost_fb\":" << s.lost_fb
-     << ",\"lost_ransac\":" << s.lost_ransac << ",\"thinned\":" << s.thinned
-     << ",\"landmarks_in_window\":" << out.landmarks_in_window
+     << ",\"reset\":" << (out.reset ? "true" : "false") << ",\"features\":" << frame.features.size()
+     << ",\"tracked\":" << s.tracked << ",\"detected\":" << s.detected
+     << ",\"stereo_matched\":" << s.stereo_matched << ",\"lost_klt\":" << s.lost_klt
+     << ",\"lost_fb\":" << s.lost_fb << ",\"lost_ransac\":" << s.lost_ransac
+     << ",\"thinned\":" << s.thinned << ",\"landmarks_in_window\":" << out.landmarks_in_window
      << ",\"new_landmarks\":" << out.new_landmarks << ",\"visual_factors\":" << out.visual_factors
      << ",\"outliers\":" << out.outlier_ids.size() << ",\"frontend_ms\":" << s.ms_total
      << ",\"solve_ms\":" << out.solve_ms << ",\"frame_ms\":" << extras.frame_ms
@@ -298,8 +302,8 @@ void FoxgloveVisualizer::logLandmarks(double t,
   cloud.frame_id = "world";
   cloud.point_stride = 16;  // x, y, z, id as float32
   using NT = fm::PackedElementField::NumericType;
-  cloud.fields = {{"x", 0, NT::FLOAT32}, {"y", 4, NT::FLOAT32}, {"z", 8, NT::FLOAT32},
-                  {"id", 12, NT::FLOAT32}};
+  cloud.fields = {
+      {"x", 0, NT::FLOAT32}, {"y", 4, NT::FLOAT32}, {"z", 8, NT::FLOAT32}, {"id", 12, NT::FLOAT32}};
   cloud.data.resize(lms.size() * 16);
   for (std::size_t i = 0; i < lms.size(); ++i) {
     const float v[4] = {static_cast<float>(lms[i].second.x()),

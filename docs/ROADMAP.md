@@ -182,10 +182,23 @@ noise); Kestrel's `VioEstimator` is the policy, and `VisualInertialOdometry` the
       RPE 1.9 cm per metre, 23 ms/frame median (see `docs/benchmarks.md`)
 - [x] TUM-VI room1–6 all complete with no resets: mean ATE 9.1 cm, RPE 1.9 cm per metre
       (table in `docs/benchmarks.md`)
+- [x] EuRoC MH_01 / MH_02 complete with no resets: ATE 6.5 / 4.3 cm
 - [ ] Compare against published VIO-only results on the same sequences (cite the papers' tables)
 - [ ] Real time: ≥ 30 Hz on x86 at 848×480 (p95 latency logged)
 - [ ] D5 (your loop): end-point drift < 1 % of path length, VIO only
 - [ ] D7 (fast motion): no divergence
+
+---
+
+## Visualization (Foxglove) — cross-cutting
+
+- [x] Foxglove SDK in the image (pinned, checksummed, x86-64 + aarch64)
+- [x] `kestrel_viz`: live WebSocket + MCAP recording of images, tracks, poses, TF, landmarks,
+      frustum, per-frame stats and log messages (`docs/visualization.md`)
+- [x] `run_vio --foxglove / --mcap / --rate`; layout `tools/foxglove/kestrel_layout.json`
+- [ ] Loop-closure edges and the map-frame trajectory (with M5)
+- [ ] Voxel map and change regions (with M8)
+- [ ] Same topics from the ROS node via foxglove_bridge (M9)
 
 ---
 

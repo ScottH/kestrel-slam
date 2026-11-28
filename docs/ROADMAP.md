@@ -25,7 +25,7 @@ this file tracks *what is done* and *what is next*.
 | M1 | Sensor models on GTSAM + OpenCV (IMU, stereo rectification) | ✅ merged (PR #3) |
 | M2 | Stereo front-end | ✅ merged (PR #4); real-data exit check pending |
 | M3 | Sliding-window VIO (GTSAM fixed-lag smoother) | ✅ merged (PR #5) |
-| M4 | Dynamic-object robustness | ⬜ |
+| M4 | Dynamic-object robustness | 🟡 built and verified on simulated + injected objects; D8/D9 recordings pending |
 | M5 | Loop closure (FBoW + PnP + iSAM2 pose graph) | ✅ merged (PR #7); precision follow-ups open |
 | M6 | Multi-session maps & relocalization | ⬜ |
 | M7 | Lifelong mapping (persistence filters) | ⬜ |
@@ -231,22 +231,34 @@ noise); Kestrel's `VioEstimator` is the policy, and `VisualInertialOdometry` the
 ## M4 — Dynamic-object robustness
 
 **Build**
-- [ ] Post-solve reprojection gating → flag and remove dynamic tracks
-- [ ] Dynamic "heat" grid with decay; blocks new detections in hot cells
-- [ ] Back-end → front-end feedback (drop flagged track ids)
-- [ ] External semantic-mask input (topic / API), optional
-- [ ] Optional ONNX segmentation plug-in (YOLO-seg class) behind a CMake flag
+- [x] Post-solve reprojection gating → flag dynamic tracks, and **remove the factors they already
+      contributed** to the window (GTSAM `factorsToRemove`). This also improves clean data.
+- [x] Confirmation delay for new landmarks (≥ 0.09 s), so a mover cannot enter the graph during a
+      momentary standstill
+- [x] Avalanche guard: a solve that would flag most of what is seen is distrusted
+- [x] Dynamic "heat" grid with decay; blocks new detections (not tracks) in hot cells
+- [x] Back-end → front-end feedback (drop flagged track ids)
+- [x] External semantic-mask input: `addStereo(..., mask)` API and `run_vio --masks DIR`
+- [ ] External mask as a ROS topic (with the node, M9)
+- [ ] Optional ONNX segmentation plug-in (YOLO-seg class) behind a CMake flag. This is the remedy
+      for slow movers (below); it needs onnxruntime in the image
 
 **Verify**
-- [ ] Synthetic: a moving landmark cluster (30 % of features) leaves ATE within 10 % of the
-      static case, and ≥ 90 % of its tracks are flagged
-- [ ] Ablation script: on/off comparison table produced automatically
+- [x] Synthetic: a moving cluster with 30 % of the features keeps ATE within 10 % of the static
+      (oracle) case, with ≥ 90 % of its tracks neutralized. Measured: travelling with the camera
+      1.00×; walking at 0.5 m/s 1.08×; 100 % neutralized. Without M4: 6.2 m and 73 cm.
+- [x] Known limit, measured and tested: slow coherent movers (≤ 0.3 m/s, 30 % of the features)
+      are followed by the estimate (theory ch. 07 §3.4). M4 does not make this worse.
+- [x] Ablation script: `tools/dynamic_ablation.py` compares clean / M4 off / M4 on / oracle mask
+      on real sequences with an injected object crossing the view (`run_vio --inject-dynamic`)
+- [x] Full regression report: no regression on the 8 benchmark sequences (`docs/benchmarks.md`)
 
 **Data**: **D8** (people walking), **D9** (large moving object filling the view).
 
 **Exit**
 - [ ] D8: ATE / end-point drift within 1.5× of the comparable static recording
-- [ ] D9: no divergence while a large object crosses the view
+- [ ] D9: no divergence while a large object crosses the view. Passed with the injected object on
+      TUM-VI/EuRoC (M3: diverged); real recording pending
 
 ---
 

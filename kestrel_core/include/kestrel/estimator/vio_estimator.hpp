@@ -136,9 +136,11 @@ class VioEstimator {
              const gtsam::FixedLagSmoother::KeyTimestampMap& stamps, Output* out);
   /// Post-solve check of the latest keyframe's observations; returns how many were flagged.
   int collectOutliers(int k, Output* out);
-  /// Marks a landmark as outlier: no further factors, reported to the front-end, and (M4) its
-  /// factors already in the window are queued for removal with the next update.
+  /// Marks a landmark as outlier: no further factors, and reported to the front-end.
   void flagLandmark(int id, Output* out);
+  /// End of a keyframe (M4): if enough landmarks were flagged together, queue their earlier
+  /// factors for removal with the next update.
+  void queueFactorRemovals();
   void readKeyframeState(int k);
   std::unique_ptr<gtsam::IncrementalFixedLagSmoother> makeSmoother() const;
 
@@ -184,6 +186,7 @@ class VioEstimator {
   /// marginalization frees slots, and iSAM2 reuses freed slots for new factors.
   std::unordered_map<int, std::vector<std::size_t>> landmark_factors_;
   gtsam::FactorIndices pending_removals_;
+  std::vector<int> flagged_this_keyframe_;
 };
 
 }  // namespace kestrel

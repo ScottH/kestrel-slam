@@ -9,6 +9,7 @@ summarizes accuracy, robustness and timing in one table.
     tools/regression_report.py --skip-run            # re-score existing results only
     tools/regression_report.py --update-baseline     # accept the current results as baseline
     tools/regression_report.py --ci                  # quick CI check (short clip, run twice)
+    tools/regression_report.py --starts 0 4 8        # average over 3 start frames (decisions)
 
 Inputs:
     tools/benchmarks.yaml            sequence registry + regression tolerances
@@ -22,6 +23,11 @@ Per sequence: ATE of the odometry, of the online map-frame estimate and of the f
 RPE per metre; loop closures and how many of them ground truth says are wrong; resets; timing.
 Summary rows give mean / median / max. The exit code is 1 if any sequence regressed against the
 baseline beyond the tolerances (so CI or a pre-merge check can use it).
+
+--starts S1 S2 ...: run each sequence once per start frame and report the AVERAGE. Odometry
+drift over a 70-150 m sequence is chaotic: a harmless change reshuffles single-run VIO ATE by
+±50 % per sequence (docs/benchmarks.md, M4). Use averaged runs, against a baseline made with the
+same starts, to decide whether an algorithm change is an improvement.
 
 --ci selects the `ci_sequences` / `ci_tolerances` of the registry, the baseline
 tools/regression_baseline_ci.json and the results folder <results>/ci. Each clip is run twice and
@@ -99,10 +105,10 @@ def machine():
     return {'cpu': cpu, 'cores': os.cpu_count(), 'arch': platform.machine()}
 
 
-def run_sequence(seq, out_dir):
+def run_sequence(seq, out_dir, extra=()):
     cmd = [RUN_VIO, str(DATA / 'datasets' / seq['dataset']), str(REPO / seq['config']),
-           str(out_dir), *seq.get('options', [])]
-    log = out_dir.parent / f"{seq['name']}.log"
+           str(out_dir), *seq.get('options', []), *extra]
+    log = out_dir.parent / f"{out_dir.name}.log"
     out_dir.mkdir(parents=True, exist_ok=True)
     with open(log, 'w') as f:
         return subprocess.run(cmd, stdout=f, stderr=subprocess.STDOUT).returncode
@@ -136,6 +142,26 @@ def score(seq, out_dir):
         'loop_closure_async': stats.get('loop_closure_async', False),
     })
     return row
+
+
+def average_rows(seq, rows):
+    """One row from several runs of the same sequence (different start frames)."""
+    ok = [r for r in rows if r['status'] == 'ok']
+    if len(ok) < len(rows):
+        return {'name': seq['name'], 'group': seq.get('group', ''), 'status': 'failed'}
+    out = dict(ok[0])
+    for key, value in ok[0].items():
+        values = [r.get(key) for r in ok]
+        if isinstance(value, bool) or not isinstance(value, (int, float)) or None in values:
+            continue
+        if key in ('wrong_loops', 'resets'):
+            out[key] = sum(values)  # any occurrence counts
+        elif isinstance(value, int):
+            out[key] = round(statistics.mean(values))
+        else:
+            out[key] = statistics.mean(values)
+    out['starts'] = len(ok)
+    return out
 
 
 def fmt(value, pattern):
@@ -212,6 +238,8 @@ def main() -> int:
     parser.add_argument('--update-baseline', action='store_true',
                         help=f'write the results as the new baseline ({BASELINE.relative_to(REPO)})')
     parser.add_argument('--no-fail', action='store_true', help='exit 0 even on regressions')
+    parser.add_argument('--starts', nargs='*', type=int,
+                        help='start frames; each sequence runs once per start, results averaged')
     parser.add_argument('--ci', action='store_true',
                         help='quick CI check: ci_sequences, CI baseline, determinism check')
     args = parser.parse_args()
@@ -242,13 +270,24 @@ def main() -> int:
             print(f"{seq['name']}: data not found, skipped", file=sys.stderr)
             continue
         repeat_dir = results / (seq['name'] + '_repeat')
-        if not args.skip_run:
+        if not args.skip_run and not (args.starts and not args.ci):
             print(f"{seq['name']}: running ...", file=sys.stderr, flush=True)
             for d in (out_dir, repeat_dir) if args.ci else (out_dir,):
                 if d.exists():
                     shutil.rmtree(d)
                 run_sequence(seq, d)
-        rows.append(score(seq, out_dir))
+        if args.starts and not args.ci:
+            runs = []
+            for start in args.starts:
+                d = results / 'starts' / seq['name'] / f's{start}'
+                if not args.skip_run:
+                    if d.exists():
+                        shutil.rmtree(d)
+                    run_sequence(seq, d, ['--start-frame', str(start)])
+                runs.append(score(seq, d))
+            rows.append(average_rows(seq, runs))
+        else:
+            rows.append(score(seq, out_dir))
         r = rows[-1]
         if args.ci and r['status'] == 'ok':
             r['differs'] = [f for f in DETERMINISTIC_FILES
@@ -260,10 +299,16 @@ def main() -> int:
 
     baseline = json.loads(baseline_file.read_text()) if baseline_file.exists() else None
     check_lines, failed = compare(rows, baseline, tolerances)
+    current_starts = args.starts if args.starts and not args.ci else [0]
+    if baseline and baseline.get('starts', [0]) != current_starts:
+        check_lines.insert(0, f"| (all) | ⚠️ note | baseline used start frames "
+                              f"{baseline.get('starts', [0])}, this run {current_starts}: "
+                              "not comparable |")
 
     now = datetime.datetime.now()
     meta = {'date': now.isoformat(timespec='seconds'), 'commit': commit + ('+dirty' if dirty else ''),
-            'machine': machine(), 'skipped': skipped}
+            'machine': machine(), 'skipped': skipped,
+            'starts': args.starts if args.starts and not args.ci else [0]}
     header = '| Sequence | Group | ' + ' | '.join(c[1] for c in COLUMNS) + ' |'
     sep = '|' + '---|' * (len(COLUMNS) + 2)
     table = [header, sep]
@@ -278,7 +323,8 @@ def main() -> int:
         f"# Kestrel {'CI ' if args.ci else ''}regression report — {now:%Y-%m-%d %H:%M}",
         '',
         f"Commit `{meta['commit']}` · {m['cpu']} ({m['cores']} cores, {m['arch']}) · "
-        f"baseline: `{baseline['commit'] if baseline else 'none'}`",
+        f"baseline: `{baseline['commit'] if baseline else 'none'}`"
+        + (f" · averaged over start frames {meta['starts']}" if len(meta['starts']) > 1 else ''),
         '',
         '## Results',
         '',

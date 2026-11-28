@@ -115,11 +115,15 @@ struct DynamicConfig {
   int grid_cols = 8;
   double heat_decay = 0.8;           ///< per-keyframe decay of the heat map
   double heat_mask_threshold = 0.5;  ///< cells above this block new features
-  /// When a landmark is flagged, also remove the factors it contributed EARLIER in the window
+  /// When landmarks are flagged, also remove the factors they contributed EARLIER in the window
   /// (in the next keyframe's update), so a mover stops pulling on the solution instead of until
-  /// it is marginalized. Also helps on clean data: TUM-VI room1 40 s, VIO ATE 1.86 → 1.41 cm.
-  /// (An immediate extra re-solve was tried and made results worse: 2.95 cm.)
+  /// it is marginalized. Only when at least remove_min_flagged landmarks are flagged at the same
+  /// keyframe. Measured (theory ch. 07 §3.2, averaged over 3 start frames × 8 sequences): VIO
+  /// ATE 8.9 cm without M4, 8.2 cm M4 without removal, 8.1 cm with removal (K = 1), 8.8 cm
+  /// with K = 5; on movers K = 1 is clearly best (simulated walker 1.08× the oracle vs 1.34×
+  /// without removal). An immediate extra re-solve was also tried and made results worse.
   bool remove_flagged_factors = true;
+  int remove_min_flagged = 1;
   /// A new landmark is confirmed only by a keyframe at least this long after its first
   /// sighting. Across one frame (33-50 ms) an object moving at walking speed still fits the
   /// IMU prediction; after ~0.1 s it no longer does, so it never enters the graph.

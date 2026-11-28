@@ -67,6 +67,7 @@ void VioEstimator::reset() {
   rejected_.clear();
   landmark_factors_.clear();
   pending_removals_.clear();
+  flagged_this_keyframe_.clear();
 }
 
 void VioEstimator::initialize(double t, const gtsam::NavState& state,
@@ -208,6 +209,7 @@ void VioEstimator::createFirstKeyframe(const FeatureFrame& frame, const std::vec
   num_keyframes_ = 1;
   readKeyframeState(0);
   collectOutliers(0, out);
+  queueFactorRemovals();
 
   out->initialized = true;
   out->is_keyframe = true;
@@ -249,6 +251,7 @@ void VioEstimator::addKeyframe(const FeatureFrame& frame,
   kf_time_ = frame.t;
   readKeyframeState(k);
   collectOutliers(k, out);
+  queueFactorRemovals();
 
   out->initialized = true;
   out->is_keyframe = true;
@@ -447,20 +450,31 @@ void VioEstimator::flagLandmark(int id, Output* out) {
   if (rejected_.count(id)) return;
   rejected_[id] = true;
   out->outlier_ids.push_back(id);
-  const auto it = landmark_factors_.find(id);
-  if (it == landmark_factors_.end()) return;
-  if (config_.dynamic.enable && config_.dynamic.remove_flagged_factors) {
-    // A slot is only removed if it still holds a factor of THIS landmark: the factor may have
-    // been marginalized (folded into the window prior, no longer removable) and its slot reused.
-    const auto& factors = smoother_->getFactors();
-    const gtsam::Key l = L(id);
-    for (const std::size_t slot : it->second) {
-      if (slot >= factors.size() || !factors[slot]) continue;
-      const auto& keys = factors[slot]->keys();
-      if (std::find(keys.begin(), keys.end(), l) != keys.end()) pending_removals_.push_back(slot);
+  flagged_this_keyframe_.push_back(id);
+}
+
+void VioEstimator::queueFactorRemovals() {
+  const auto& dyn = config_.dynamic;
+  const bool remove = dyn.enable && dyn.remove_flagged_factors &&
+                      static_cast<int>(flagged_this_keyframe_.size()) >= dyn.remove_min_flagged;
+  const auto& factors = smoother_->getFactors();
+  for (const int id : flagged_this_keyframe_) {
+    const auto it = landmark_factors_.find(id);
+    if (it == landmark_factors_.end()) continue;
+    if (remove) {
+      // A slot is only removed if it still holds a factor of THIS landmark: the factor may have
+      // been marginalized (folded into the window prior, no longer removable) and its slot
+      // reused for a new factor.
+      const gtsam::Key l = L(id);
+      for (const std::size_t slot : it->second) {
+        if (slot >= factors.size() || !factors[slot]) continue;
+        const auto& keys = factors[slot]->keys();
+        if (std::find(keys.begin(), keys.end(), l) != keys.end()) pending_removals_.push_back(slot);
+      }
     }
+    landmark_factors_.erase(it);
   }
-  landmark_factors_.erase(it);
+  flagged_this_keyframe_.clear();
 }
 
 int VioEstimator::collectOutliers(int /*k*/, Output* out) {

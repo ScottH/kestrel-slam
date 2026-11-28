@@ -68,15 +68,74 @@ degrees of freedom (dof) as the residual has components:
 | Stereo reprojection $(u_L, v_L, u_R)$ | 3 | 7.815 | 11.345 |
 
 If an observation's $e$ exceeds the threshold, it is unlikely to be a static point under the
-current estimate. Kestrel uses a simpler, slightly more conservative statistic in pixels, the
-**mean reprojection error** over the landmark's observations in the window
-(`outlier_reprojection_px`, default 3 px), and flags landmarks above it as outliers. Flagged
-landmarks are removed from the estimator, and their feature IDs are reported back to the
+current estimate. Kestrel uses the same idea in pixels, which is easier to reason about. Two
+gates are applied, both per observation:
+
+* **Before the solve**, the landmark is projected with the **IMU-predicted** pose. An error above
+  `gate_reprojection_px` (12 px) means the track jumped, so the observation is not added.
+* **After the solve**, an error above `outlier_reprojection_px` (4 px) flags the landmark.
+
+Flagged landmarks get no further factors, and their feature IDs are reported back to the
 front-end so it stops tracking them.
 
-Gating *after* the solve, and re-solving if many landmarks were removed, is a simple version of
-**alternating estimation**: estimate motion with robust weights, classify points, then
-re-estimate with the inliers only.
+Classifying *after* the solve and then re-estimating without the flagged points is a simple
+version of **alternating estimation**. In Kestrel the re-estimate happens with the next keyframe
+(§3.2).
+
+### 3.1 Give a mover time to give itself away
+
+New landmarks need a **second keyframe** to confirm their stereo position (theory ch. 06). If that
+second keyframe comes only one frame later (33–50 ms), an object moving at walking speed has
+moved about 2 cm, which is well inside every gate. In simulation, a box that travels with the camera
+and is briefly still at its turning points got 38 of 45 points confirmed during such a moment.
+The next solve followed the close, precise box, flagged **76 static points** instead, and the
+estimator ended 6 m off.
+
+Kestrel therefore requires the confirming keyframe to be at least `dynamic.min_confirmation_s`
+(0.09 s, about one keyframe interval) after the first sighting. That short wait costs nothing on
+static scenes, and in that simulation no box point entered the graph.
+
+### 3.2 Remove what a flagged landmark has already contributed
+
+Flagging stops *future* observations, but the factors a mover added in the last few keyframes stay
+in the window until they are marginalized, and keep pulling on the solution. GTSAM's fixed-lag
+smoother can delete factors (`factorsToRemove`), so Kestrel records where each landmark's factors
+live (iSAM2 factor slots) and removes them when the landmark is flagged, in the next keyframe's
+update. A slot is checked before it is removed, because marginalization frees slots and iSAM2
+reuses them.
+
+Removing outliers also helps on *clean* data, since mismatches are outliers too: on the first 40 s
+of TUM-VI room1, VIO ATE drops from 1.86 cm to **1.41 cm**.
+
+*Negative result:* re-solving immediately when many landmarks were flagged, as an extra iSAM2
+update, sounds better but measured worse (2.95 cm). Doing the removal in the next regular update
+is both cheaper and more accurate.
+
+### 3.3 The avalanche guard
+
+If one solve would flag more than half of a keyframe's observations (`dynamic.max_flag_fraction`),
+the *solution* is the suspect, not the world: a large mover has pulled it. Flagging the majority
+would hand the estimator to the mover (regime 2 of §1), so nothing is flagged in that case.
+
+### 3.4 The limit: slow, coherent movers
+
+A box carrying 30 % of the features, 2 m away, **drifting at 0.1 m/s**, moves 1 cm per keyframe.
+That passes every gate. Over the window, the estimate partly *follows* the box, and the velocity
+and accelerometer bias absorb the small mismatch the IMU would otherwise show. Measured residuals
+after the solve: median 0.83 px for box points against 0.73 px for static ones. Even the
+pre-solve, IMU-predicted residuals differ only by about 2× (2.0 vs. 1.6 px), because the predicted
+velocity has already absorbed the drift.
+
+An accumulated, IMU-referenced consistency score per landmark was tried and **measured no effect**
+for exactly that reason.
+
+| Drift speed of the box | 0.05 | 0.1 | 0.2 | 0.3 | 0.5 | 1.0 m/s |
+|---|---|---|---|---|---|---|
+| RMSE with M4 / oracle | 3.8× | 7.2× | 16× | 27× | 1.03× | 1.00× |
+
+(Simulation, 30 % of features on the moving box. *Oracle* means its features removed.) From walking
+speed upward the movers are handled. Below it, geometry and IMU cannot tell "the box moves" from
+"we move", and **prior knowledge** is needed: a semantic mask (§5).
 
 ---
 
@@ -152,13 +211,27 @@ budget (Jetson-class hardware).
 
 ## 8. In Kestrel
 
-| Concept | Where (planned) |
-|---------|-----------------|
-| Parameters | `dynamic:` section of the config (available now) |
-| Landmark gating + feedback of dynamic feature IDs | `kestrel/estimator/dynamic_filter.hpp` — **planned (M4)** |
-| Heat grid and front-end mask | `kestrel/estimator/dynamic_filter.hpp`, `kestrel/frontend/feature_tracker.hpp` — **planned (M4)** |
-| External semantic mask input (ROS topic) | `kestrel_ros` — **planned (M4/M9)** |
-| Synthetic moving-cluster test | `test/test_dynamic.cpp` — **planned (M4)** |
+| Concept | Where |
+|---------|-------|
+| Parameters | `dynamic:` section of the config (`enable: false` = plain M3 gates, for ablations) |
+| IMU-predicted gate, post-solve gate, feedback of track ids | `VioEstimator::addVisualFactors`, `collectOutliers` (`kestrel/estimator/vio_estimator.hpp`) |
+| Confirmation delay, factor removal, avalanche guard (§3.1–3.3) | `VioEstimator` (`flagLandmark`, `dynamic.min_confirmation_s`, `max_flag_fraction`) |
+| Heat grid (§4) and detection-only mask | `kestrel/frontend/dynamic_heat_grid.hpp`; `FeatureTracker::track(..., detection_mask)`; wired in `VisualInertialOdometry` |
+| External semantic masks (§5) | `VisualInertialOdometry::addStereo(t, left, right, mask)`; offline `run_vio --masks DIR` (one PNG per frame); ROS topic with the node (M9) |
+| Synthetic moving objects | `test/sim_world.hpp` (`dynamic_*` options), `test/test_dynamic.cpp` |
+| Moving object painted into real images | `kestrel/eval/dynamic_overlay.hpp`, `run_vio --inject-dynamic [--oracle-mask]` |
+| On/off ablation table | `tools/dynamic_ablation.py` (`docs/benchmarks.md`) |
+
+**Measured** (simulation, 30 % of features on the mover; RMSE against an oracle without them):
+a box travelling with the camera, 1.00× (M3 without these measures: 6.2 m, diverged);
+boxes walking at 0.5 m/s, 1.08× (M3: 31×); 100 % of their tracks neutralized. Slow coherent
+movers are the known limit (§3.4). On real images with a large injected object, see
+`docs/benchmarks.md`.
+
+**Observation:** on the injected-object test the heat grid never heats up. The front-end's
+F-matrix RANSAC and the estimator's gates drop the object's tracks before enough of them are
+flagged in one cell. Recordings with people walking (roadmap D8) will show whether it matters
+in practice.
 
 ---
 

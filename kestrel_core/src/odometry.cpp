@@ -15,7 +15,10 @@ VisualInertialOdometry::VisualInertialOdometry(const Config& config)
       rig_(std::make_shared<StereoRig>(config.camera)),
       tracker_(config.frontend, rig_),
       estimator_(config, rig_),
-      imu_params_(makeImuParams(config.imu)) {}
+      imu_params_(makeImuParams(config.imu)) {
+  if (config.dynamic.enable)
+    heat_.emplace(config.dynamic, config.camera.width, config.camera.height);
+}
 
 void VisualInertialOdometry::addImu(const ImuSample& sample) {
   if (!imu_.empty() && sample.t <= imu_.back().t) {
@@ -47,7 +50,9 @@ std::optional<VioEstimator::Output> VisualInertialOdometry::addStereo(double t, 
     const auto samples = imuSince(*last_frame_t_);
     if (integrateImu(samples, *last_frame_t_, t_cam, &pim) > 0) R_prev_cur = pim.deltaRij();
   }
-  last_frame_ = tracker_.track(t_cam, left, right, R_prev_cur, mask);
+  // Hot cells of the dynamic heat grid get no new features (existing tracks stay).
+  const cv::Mat detection_mask = heat_ ? heat_->detectionMask() : cv::Mat();
+  last_frame_ = tracker_.track(t_cam, left, right, R_prev_cur, mask, detection_mask);
 
   // The estimator needs IMU from its last keyframe (or the static-init window) up to now.
   const double from = estimator_.hasKeyframe()
@@ -55,7 +60,14 @@ std::optional<VioEstimator::Output> VisualInertialOdometry::addStereo(double t, 
                           : t_cam - config_.estimator.init_static_window_s - 0.05;
   auto output = estimator_.process(last_frame_, imuSince(from));
   if (!output.outlier_ids.empty()) tracker_.dropTracks(output.outlier_ids);
-  if (output.reset) tracker_.reset();
+  if (heat_ && output.is_keyframe) {
+    heat_->update(last_frame_.features,
+                  std::unordered_set<int>(output.outlier_ids.begin(), output.outlier_ids.end()));
+  }
+  if (output.reset) {
+    tracker_.reset();
+    if (heat_) heat_->reset();
+  }
   last_frame_t_ = t_cam;
 
   // Keep the buffer bounded: nothing older than the last keyframe (minus a margin) is needed.

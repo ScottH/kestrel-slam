@@ -241,6 +241,10 @@ void visit(V& v, DynamicConfig& c) {
   v.field("grid_cols", c.grid_cols);
   v.field("heat_decay", c.heat_decay);
   v.field("heat_mask_threshold", c.heat_mask_threshold);
+  v.field("remove_flagged_factors", c.remove_flagged_factors);
+  v.field("remove_min_flagged", c.remove_min_flagged);
+  v.field("min_confirmation_s", c.min_confirmation_s);
+  v.field("max_flag_fraction", c.max_flag_fraction);
 }
 
 template <class V>
@@ -379,6 +383,12 @@ std::vector<std::string> Config::validate() const {
   // Dynamic
   require(dynamic.heat_decay >= 0 && dynamic.heat_decay < 1, "dynamic.heat_decay must be in [0,1)");
   require(dynamic.grid_rows > 0 && dynamic.grid_cols > 0, "dynamic grid size must be positive");
+  require(dynamic.heat_mask_threshold > 0 && dynamic.heat_mask_threshold <= 1,
+          "dynamic.heat_mask_threshold must be in (0, 1]");
+  require(dynamic.min_confirmation_s >= 0, "dynamic.min_confirmation_s must be >= 0");
+  require(dynamic.remove_min_flagged >= 1, "dynamic.remove_min_flagged must be >= 1");
+  require(dynamic.max_flag_fraction > 0 && dynamic.max_flag_fraction <= 1,
+          "dynamic.max_flag_fraction must be in (0, 1]");
 
   // Loop closure
   require(loop_closure.min_inliers >= 6, "loop_closure.min_inliers must be >= 6 (PnP)");

@@ -107,12 +107,31 @@ struct EstimatorConfig {
 };
 
 /// Short-term dynamic-object handling.
+/// Theory: docs/theory/07_dynamic_objects.md. `enable: false` gives the plain M3 behaviour
+/// (per-observation gates only), which is what the ablation compares against.
 struct DynamicConfig {
   bool enable = true;
-  int grid_rows = 6;  ///< resolution of the "dynamic heat" grid
+  int grid_rows = 6;  ///< resolution of the "dynamic heat" grid (raw left image)
   int grid_cols = 8;
-  double heat_decay = 0.8;           ///< per-frame decay of the heat map
+  double heat_decay = 0.8;           ///< per-keyframe decay of the heat map
   double heat_mask_threshold = 0.5;  ///< cells above this block new features
+  /// When landmarks are flagged, also remove the factors they contributed EARLIER in the window
+  /// (in the next keyframe's update), so a mover stops pulling on the solution instead of until
+  /// it is marginalized. Only when at least remove_min_flagged landmarks are flagged at the same
+  /// keyframe. Measured (theory ch. 07 §3.2, averaged over 3 start frames × 8 sequences): VIO
+  /// ATE 8.9 cm without M4, 8.2 cm M4 without removal, 8.1 cm with removal (K = 1), 8.8 cm
+  /// with K = 5; on movers K = 1 is clearly best (simulated walker 1.08× the oracle vs 1.34×
+  /// without removal). An immediate extra re-solve was also tried and made results worse.
+  bool remove_flagged_factors = true;
+  int remove_min_flagged = 1;
+  /// A new landmark is confirmed only by a keyframe at least this long after its first
+  /// sighting. Across one frame (33-50 ms) an object moving at walking speed still fits the
+  /// IMU prediction; after ~0.1 s it no longer does, so it never enters the graph.
+  double min_confirmation_s = 0.09;
+  /// Avalanche guard: if one solve would flag more than this fraction of a keyframe's
+  /// observations, the SOLUTION is suspect (pulled by a large mover), not the world. Nothing is
+  /// flagged then, because flagging the majority would hand the estimator to the mover.
+  double max_flag_fraction = 0.5;
 };
 
 /// Place recognition and loop closure.

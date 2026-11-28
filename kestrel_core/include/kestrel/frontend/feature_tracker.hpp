@@ -28,8 +28,10 @@
 //      tracks are thinned longest-first, so long (valuable) tracks win.
 //   5. Stereo: KLT from left to right, accepted only if the rectified rows agree and the
 //      disparity is positive (the point is in front of the rig).
-//   6. Feedback hooks for M4: an external mask (e.g. moving objects) blocks features, and the
-//      estimator can drop tracks it has flagged as outliers.
+//   6. Dynamic objects (M4, theory ch. 07): an external mask (e.g. semantic segmentation of
+//      people) removes tracks and blocks detection; a detection-only mask (the dynamic heat
+//      grid, kestrel/frontend/dynamic_heat_grid.hpp) only blocks NEW corners; and the estimator
+//      drops tracks it has flagged as outliers.
 
 #pragma once
 
@@ -99,9 +101,11 @@ class FeatureTracker {
   ///                    frames). Enables gyro-aided prediction.
   /// @param mask        optional CV_8U mask, same size as the images; non-zero pixels are
   ///                    excluded (no features kept or detected there).
+  /// @param detection_mask  optional CV_8U mask; non-zero pixels get no NEW features, but
+  ///                    existing tracks there are kept (dynamic heat grid).
   FeatureFrame track(double t, const cv::Mat& left, const cv::Mat& right,
                      const std::optional<gtsam::Rot3>& R_prev_cur = std::nullopt,
-                     const cv::Mat& mask = cv::Mat());
+                     const cv::Mat& mask = cv::Mat(), const cv::Mat& detection_mask = cv::Mat());
 
   /// Removes tracks by id before the next frame (estimator feedback, e.g. dynamic outliers).
   void dropTracks(const std::vector<int>& ids);

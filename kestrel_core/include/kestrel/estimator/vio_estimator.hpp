@@ -34,7 +34,11 @@
 //     (their timestamp is refreshed on every observation, so a landmark is marginalized only
 //     after it has not been seen for a full window),
 //   * initialization (static start or an explicitly given state),
-//   * outlier reporting back to the front-end, and recovery when the solver fails.
+//   * outlier reporting back to the front-end, and recovery when the solver fails,
+//   * dynamic objects (M4, theory ch. 07): new landmarks are confirmed only after enough time
+//     for a mover to give itself away; a flagged landmark loses not only its future
+//     observations but also the factors it contributed EARLIER in the window (GTSAM's
+//     factorsToRemove); and a solve that would flag most of what is seen is distrusted.
 //
 // Between keyframes, the state is predicted with the IMU alone (cheap and smooth).
 
@@ -67,11 +71,13 @@ class VioEstimator {
     bool reset = false;        ///< the solver failed and the estimator restarted
     gtsam::NavState state;     ///< world ← body pose and world-frame velocity
     gtsam::imuBias::ConstantBias bias;
-    int keyframe_index = -1;       ///< index of the latest keyframe
-    int landmarks_in_window = 0;   ///< landmarks currently in the smoother
-    int new_landmarks = 0;         ///< landmarks created at this keyframe
-    int visual_factors = 0;        ///< stereo + mono factors added at this keyframe
-    std::vector<int> outlier_ids;  ///< track ids the front-end should drop
+    int keyframe_index = -1;            ///< index of the latest keyframe
+    int landmarks_in_window = 0;        ///< landmarks currently in the smoother
+    int new_landmarks = 0;              ///< landmarks created at this keyframe
+    int visual_factors = 0;             ///< stereo + mono factors added at this keyframe
+    std::vector<int> outlier_ids;       ///< track ids the front-end should drop
+    std::vector<int> new_landmark_ids;  ///< track ids that became landmarks at this keyframe
+    int removed_factors = 0;            ///< factors of flagged landmarks removed from the window
     double solve_ms = 0.0;
   };
 
@@ -128,7 +134,13 @@ class VioEstimator {
                         gtsam::FixedLagSmoother::KeyTimestampMap* stamps, Output* out);
   bool solve(const gtsam::NonlinearFactorGraph& graph, const gtsam::Values& values,
              const gtsam::FixedLagSmoother::KeyTimestampMap& stamps, Output* out);
-  void collectOutliers(int k, Output* out);
+  /// Post-solve check of the latest keyframe's observations; returns how many were flagged.
+  int collectOutliers(int k, Output* out);
+  /// Marks a landmark as outlier: no further factors, and reported to the front-end.
+  void flagLandmark(int id, Output* out);
+  /// End of a keyframe (M4): if enough landmarks were flagged together, queue their earlier
+  /// factors for removal with the next update.
+  void queueFactorRemovals();
   void readKeyframeState(int k);
   std::unique_ptr<gtsam::IncrementalFixedLagSmoother> makeSmoother() const;
 
@@ -162,12 +174,19 @@ class VioEstimator {
   /// First stereo observation of a not-yet-confirmed landmark (see addVisualFactors()).
   struct Candidate {
     int keyframe;
+    double t;  ///< time of that keyframe
     gtsam::StereoPoint2 z;
     gtsam::Point3 p_w;
   };
   std::unordered_map<int, Candidate> candidates_;
   /// Landmarks known to be outliers: never receive new factors.
   std::unordered_map<int, bool> rejected_;
+  /// Where each landmark's visual factors live in the smoother (iSAM2 factor slots), so they
+  /// can be removed if it turns out to be on a moving object. Slots are re-checked before use:
+  /// marginalization frees slots, and iSAM2 reuses freed slots for new factors.
+  std::unordered_map<int, std::vector<std::size_t>> landmark_factors_;
+  gtsam::FactorIndices pending_removals_;
+  std::vector<int> flagged_this_keyframe_;
 };
 
 }  // namespace kestrel

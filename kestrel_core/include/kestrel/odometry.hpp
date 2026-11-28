@@ -14,7 +14,9 @@
 //                       │  FeatureFrame                              VioEstimator
 //                       └──────────────────────────────────────────────►  │
 //                       ▲            outlier track ids (feedback)          │
-//                       └──────────────────────────────────────────────────┘
+//                       ├──────────────────────────────────────────────────┤
+//                       │   detection mask ◄── DynamicHeatGrid ◄───────────┘
+//                       │                      (where outliers cluster, M4)
 //
 // It is synchronous and single-threaded on purpose: the ROS node (M9) and the offline runners
 // call it from one thread, which makes runs deterministic and easy to debug. The caller must
@@ -29,6 +31,7 @@
 
 #include "kestrel/config.hpp"
 #include "kestrel/estimator/vio_estimator.hpp"
+#include "kestrel/frontend/dynamic_heat_grid.hpp"
 #include "kestrel/frontend/feature_tracker.hpp"
 #include "kestrel/imu/imu.hpp"
 #include "kestrel/sensors/stereo_rig.hpp"
@@ -44,6 +47,8 @@ class VisualInertialOdometry {
 
   /// Processes a stereo pair (raw, 8-bit grayscale). Returns nullopt — without consuming the
   /// frame — if the IMU has not yet reached time t; call again after more addImu() calls.
+  /// `mask` (optional, CV_8U, raw left image size): non-zero pixels are excluded, e.g. people
+  /// from a segmentation network (theory ch. 07 §5).
   std::optional<VioEstimator::Output> addStereo(double t, const cv::Mat& left, const cv::Mat& right,
                                                 const cv::Mat& mask = cv::Mat());
 
@@ -55,6 +60,8 @@ class VisualInertialOdometry {
   const FeatureFrame& lastFrame() const { return last_frame_; }
   const StereoRig& rig() const { return *rig_; }
   const VioEstimator& estimator() const { return estimator_; }
+  /// The dynamic heat grid, or nullptr when dynamic handling is disabled.
+  const DynamicHeatGrid* heatGrid() const { return heat_ ? &*heat_ : nullptr; }
 
  private:
   std::vector<ImuSample> imuSince(double t) const;
@@ -63,6 +70,7 @@ class VisualInertialOdometry {
   std::shared_ptr<StereoRig> rig_;
   FeatureTracker tracker_;
   VioEstimator estimator_;
+  std::optional<DynamicHeatGrid> heat_;
   ImuParamsPtr imu_params_;
   std::deque<ImuSample> imu_;
   std::optional<double> last_frame_t_;

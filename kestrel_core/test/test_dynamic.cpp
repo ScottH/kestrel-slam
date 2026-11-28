@@ -34,7 +34,7 @@ TrackedFeature featureAt(int id, float x, float y) {
 }
 
 TEST(DynamicHeatGrid, ClusteredFlagsHeatACellScatteredOnesDoNot) {
-  DynamicConfig config;  // 6 × 8 cells, decay 0.8, threshold 0.5
+  DynamicConfig config;        // 6 × 8 cells, decay 0.8, threshold 0.5
   const int w = 640, h = 480;  // cells of 80 × 80 px
   DynamicHeatGrid grid(config, w, h);
 
@@ -53,10 +53,12 @@ TEST(DynamicHeatGrid, ClusteredFlagsHeatACellScatteredOnesDoNot) {
     }
     flagged.insert(100 + k % 40);
     grid.update(features, flagged);
-    if (keyframes_to_hot < 0 && grid.heat(1, 2) > config.heat_mask_threshold) keyframes_to_hot = k + 1;
+    if (keyframes_to_hot < 0 && grid.heat(1, 2) > config.heat_mask_threshold)
+      keyframes_to_hot = k + 1;
   }
-  std::printf("[heat] object cell heat %.2f (hot after %d keyframes), hot cells %d, blocked %.1f %%\n",
-              grid.heat(1, 2), keyframes_to_hot, grid.hotCells(), 100 * grid.blockedFraction());
+  std::printf(
+      "[heat] object cell heat %.2f (hot after %d keyframes), hot cells %d, blocked %.1f %%\n",
+      grid.heat(1, 2), keyframes_to_hot, grid.hotCells(), 100 * grid.blockedFraction());
   // Steady state = flagged / (features + 1) = 6/7; crossing 0.5 takes ln(1 − 0.5·7/6)/ln 0.8 ≈ 4.
   EXPECT_NEAR(grid.heat(1, 2), 6.0 / 7.0, 0.05);
   EXPECT_LE(keyframes_to_hot, 5);
@@ -152,8 +154,9 @@ TEST(DynamicOverlay, IsStereoConsistentAtItsDepth) {
   }
   shifted /= (u1 - u0);
   unshifted /= (u1 - u0);
-  std::printf("[overlay] covers %.0f %%, disparity %.1f px, row diff shifted %.1f vs unshifted %.1f\n",
-              100 * covered, overlay.disparityPx(), shifted, unshifted);
+  std::printf(
+      "[overlay] covers %.0f %%, disparity %.1f px, row diff shifted %.1f vs unshifted %.1f\n",
+      100 * covered, overlay.disparityPx(), shifted, unshifted);
   EXPECT_LT(shifted, 0.3 * unshifted);
 }
 
@@ -224,10 +227,11 @@ MoverResult runMovingObject(const char* name, const sim::SimOptions& opt) {
   std::printf("[%s] RMSE oracle %.4f | M4 on %.4f (%.2f×) | off %.4f (%.2f×) m; resets %d/%d\n",
               name, oracle.rmse, with.rmse, with.rmse / oracle.rmse, without.rmse,
               without.rmse / oracle.rmse, with.resets, without.resets);
-  std::printf("[%s] %zu dynamic tracks: %.1f %% neutralized; %zu became landmarks, %.1f %% of "
-              "those flagged; %d factors removed\n",
-              name, world.dynamicIds().size(), 100 * neutralized_fraction, with.used.size(),
-              100 * flagged_of_used, with.removed_factors);
+  std::printf(
+      "[%s] %zu dynamic tracks: %.1f %% neutralized; %zu became landmarks, %.1f %% of "
+      "those flagged; %d factors removed\n",
+      name, world.dynamicIds().size(), 100 * neutralized_fraction, with.used.size(),
+      100 * flagged_of_used, with.removed_factors);
 
   res.neutralized_fraction = neutralized_fraction;
   res.flagged_of_used = flagged_of_used;

@@ -49,15 +49,15 @@ struct SimOptions {
   int landmarks = 4000;
   int max_features = 150;
   double pixel_sigma = 0.5;
-  double mono_fraction = 0.1;     ///< observations without a right-image match
-  double outlier_fraction = 0.0;  ///< observations replaced by random pixels
-  double dynamic_fraction = 0.0;  ///< share of max_features on the moving object
-  double dynamic_distance_m = 2.0;   ///< object distance in front of the camera
-  double dynamic_amplitude_m = 0.6;  ///< sideways oscillation amplitude (camera x)
-  double dynamic_period_s = 4.0;     ///< ... and period
-  double dynamic_respawn_s = 0.0;    ///< > 0: world-drifting boxes, a new one this often
+  double mono_fraction = 0.1;            ///< observations without a right-image match
+  double outlier_fraction = 0.0;         ///< observations replaced by random pixels
+  double dynamic_fraction = 0.0;         ///< share of max_features on the moving object
+  double dynamic_distance_m = 2.0;       ///< object distance in front of the camera
+  double dynamic_amplitude_m = 0.6;      ///< sideways oscillation amplitude (camera x)
+  double dynamic_period_s = 4.0;         ///< ... and period
+  double dynamic_respawn_s = 0.0;        ///< > 0: world-drifting boxes, a new one this often
   double dynamic_world_speed_mps = 0.1;  ///< drift speed of those boxes (sideways)
-  gtsam::Rot3 extra_tilt;         ///< extra initial body rotation (static-init tests)
+  gtsam::Rot3 extra_tilt;                ///< extra initial body rotation (static-init tests)
   gtsam::Vector3 accel_bias{0.03, -0.02, 0.05};
   gtsam::Vector3 gyro_bias{0.002, -0.003, 0.001};
   unsigned seed = 1;
@@ -167,9 +167,9 @@ class SimWorld {
         spawn = static_cast<int>(std::floor(t / opt_.dynamic_respawn_s));
         const double t_s = spawn * opt_.dynamic_respawn_s;
         const gtsam::Pose3 T_w_c0 = scenario_->pose(t_s) * T_b_c;
-        T_w_o = T_w_c0 * gtsam::Pose3(gtsam::Rot3(),
-                                      gtsam::Point3(opt_.dynamic_world_speed_mps * (t - t_s), 0,
-                                                    opt_.dynamic_distance_m));
+        T_w_o = T_w_c0 *
+                gtsam::Pose3(gtsam::Rot3(), gtsam::Point3(opt_.dynamic_world_speed_mps * (t - t_s),
+                                                          0, opt_.dynamic_distance_m));
       }
       for (int i = 0; i < static_cast<int>(object_points_.size()); ++i) {
         points.push_back(T_w_o.transformFrom(object_points_[i]));

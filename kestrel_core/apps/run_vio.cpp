@@ -35,9 +35,6 @@
 
 #include <algorithm>
 #include <chrono>
-#include <opencv2/imgcodecs.hpp>
-
-#include "kestrel/eval/dynamic_overlay.hpp"
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
@@ -46,6 +43,7 @@
 #include <map>
 #include <memory>
 #include <numeric>
+#include <opencv2/imgcodecs.hpp>
 #include <opencv2/videoio.hpp>
 #include <optional>
 #include <string>
@@ -54,6 +52,7 @@
 
 #include "kestrel/common/logging.hpp"
 #include "kestrel/config.hpp"
+#include "kestrel/eval/dynamic_overlay.hpp"
 #include "kestrel/io/euroc.hpp"
 #include "kestrel/slam_system.hpp"
 #ifdef KESTREL_WITH_FOXGLOVE
@@ -216,8 +215,8 @@ int main(int argc, char** argv) {
       auto [left, right] = dataset.loadStereo(i);
       cv::Mat mask;
       if (!mask_dir.empty()) {
-        const auto file = std::filesystem::path(mask_dir) /
-                          std::filesystem::path(images[i].left_path).filename();
+        const auto file =
+            std::filesystem::path(mask_dir) / std::filesystem::path(images[i].left_path).filename();
         if (std::filesystem::exists(file)) mask = cv::imread(file.string(), cv::IMREAD_GRAYSCALE);
         masked_frames += !mask.empty();
       }

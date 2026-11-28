@@ -71,13 +71,13 @@ class VioEstimator {
     bool reset = false;        ///< the solver failed and the estimator restarted
     gtsam::NavState state;     ///< world ← body pose and world-frame velocity
     gtsam::imuBias::ConstantBias bias;
-    int keyframe_index = -1;       ///< index of the latest keyframe
-    int landmarks_in_window = 0;   ///< landmarks currently in the smoother
-    int new_landmarks = 0;         ///< landmarks created at this keyframe
-    int visual_factors = 0;        ///< stereo + mono factors added at this keyframe
-    std::vector<int> outlier_ids;  ///< track ids the front-end should drop
+    int keyframe_index = -1;            ///< index of the latest keyframe
+    int landmarks_in_window = 0;        ///< landmarks currently in the smoother
+    int new_landmarks = 0;              ///< landmarks created at this keyframe
+    int visual_factors = 0;             ///< stereo + mono factors added at this keyframe
+    std::vector<int> outlier_ids;       ///< track ids the front-end should drop
     std::vector<int> new_landmark_ids;  ///< track ids that became landmarks at this keyframe
-    int removed_factors = 0;  ///< factors of flagged landmarks removed from the window
+    int removed_factors = 0;            ///< factors of flagged landmarks removed from the window
     double solve_ms = 0.0;
   };
 

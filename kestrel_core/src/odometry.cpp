@@ -16,7 +16,8 @@ VisualInertialOdometry::VisualInertialOdometry(const Config& config)
       tracker_(config.frontend, rig_),
       estimator_(config, rig_),
       imu_params_(makeImuParams(config.imu)) {
-  if (config.dynamic.enable) heat_.emplace(config.dynamic, config.camera.width, config.camera.height);
+  if (config.dynamic.enable)
+    heat_.emplace(config.dynamic, config.camera.width, config.camera.height);
 }
 
 void VisualInertialOdometry::addImu(const ImuSample& sample) {
@@ -60,8 +61,8 @@ std::optional<VioEstimator::Output> VisualInertialOdometry::addStereo(double t, 
   auto output = estimator_.process(last_frame_, imuSince(from));
   if (!output.outlier_ids.empty()) tracker_.dropTracks(output.outlier_ids);
   if (heat_ && output.is_keyframe) {
-    heat_->update(last_frame_.features, std::unordered_set<int>(output.outlier_ids.begin(),
-                                                                output.outlier_ids.end()));
+    heat_->update(last_frame_.features,
+                  std::unordered_set<int>(output.outlier_ids.begin(), output.outlier_ids.end()));
   }
   if (output.reset) {
     tracker_.reset();

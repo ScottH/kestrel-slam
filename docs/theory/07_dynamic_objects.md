@@ -104,12 +104,32 @@ live (iSAM2 factor slots) and removes them when the landmark is flagged, in the 
 update. A slot is checked before it is removed, because marginalization frees slots and iSAM2
 reuses them.
 
-Removing outliers also helps on *clean* data, since mismatches are outliers too: on the first 40 s
-of TUM-VI room1, VIO ATE drops from 1.86 cm to **1.41 cm**.
+Removing outliers also helps on *clean* data, since mismatches are outliers too. On the first
+40 s of TUM-VI room1, VIO ATE drops from 1.86 cm to **1.41 cm**.
 
-*Negative result:* re-solving immediately when many landmarks were flagged, as an extra iSAM2
-update, sounds better but measured worse (2.95 cm). Doing the removal in the next regular update
-is both cheaper and more accurate.
+*Negative results:*
+
+* Re-solving immediately when many landmarks were flagged, as an extra iSAM2 update, sounds better
+  but measured worse (2.95 cm). Doing the removal in the next regular update is both cheaper and
+  more accurate.
+* Removing factors only for *batches* of K ≥ 5 or 10 flags at one keyframe, on the theory that
+  movers come in groups, gave no gain on clean data. It also made movers worse, because their
+  flags arrive spread over several keyframes.
+
+**How this was decided: averaged runs.** Over a 70–150 m sequence, odometry drift is *chaotic*: a
+harmless change reshuffles single-run VIO ATE by ±50 % per sequence (MH_02 ranged from 4.0 to
+8.5 cm across variants). Comparing single runs per sequence was misleading twice during M4. The
+fair comparison runs each sequence from several start frames and averages
+(`tools/regression_report.py --starts 0 4 8`):
+
+| Mean of 8 sequences, 3 starts each | M4 off (M3) | M4, no removal | M4, K = 5 | **M4 (K = 1)** |
+|---|---|---|---|---|
+| VIO ATE | 8.9 cm | 8.2 cm | 8.8 cm | **8.1 cm** |
+| SLAM final ATE | 2.5 cm | 2.5 cm | 2.6 cm | **2.4 cm** |
+
+M4 is better than M3 on average even on clean data. Per sequence it is not uniformly better:
+TUM-VI room1 VIO is consistently worse (11.0 vs. 6.9 cm averaged), while its SLAM result is
+unchanged (2.2 cm).
 
 ### 3.3 The avalanche guard
 

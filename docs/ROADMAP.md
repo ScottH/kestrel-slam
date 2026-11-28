@@ -251,7 +251,10 @@ noise); Kestrel's `VioEstimator` is the policy, and `VisualInertialOdometry` the
       are followed by the estimate (theory ch. 07 §3.4). M4 does not make this worse.
 - [x] Ablation script: `tools/dynamic_ablation.py` compares clean / M4 off / M4 on / oracle mask
       on real sequences with an injected object crossing the view (`run_vio --inject-dynamic`)
-- [x] Full regression report: no regression on the 8 benchmark sequences (`docs/benchmarks.md`)
+- [x] Clean-data check, averaged over 3 start frames × 8 sequences: VIO ATE 8.9 → 8.1 cm, SLAM
+      2.5 → 2.4 cm (room1 VIO worse, 6.9 → 11.0 cm; its SLAM unchanged). Baselines updated
+- [x] `regression_report.py --starts`: averaged runs, because single-run per-sequence VIO ATE is
+      chaotic (±50 %) and misled two decisions
 
 **Data**: **D8** (people walking), **D9** (large moving object filling the view).
 

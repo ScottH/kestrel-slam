@@ -58,7 +58,7 @@ class DynamicOverlay {
   DynamicOverlayOptions options_;
   int width_, height_;
   double disparity_;
-  cv::Mat texture_;           ///< object appearance, CV_8U, size in rectified pixels
+  cv::Mat texture_;               ///< object appearance, CV_8U, size in rectified pixels
   cv::Mat map_left_, map_right_;  ///< raw pixel → rectified position (CV_32FC2)
 };
 
